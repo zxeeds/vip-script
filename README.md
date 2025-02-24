@@ -33,11 +33,8 @@
 - SLOWDNS 5300
 ```
 ### Author
-```
-```
 VIP DIGITAL :
-
-<a href="https://t.me/sannpro" target=”_blank”></a><br>
+<a href="https://t.me/sannpro" target=”_blank”>SANN PRO</a><br>
 ```
 ```
 ``
