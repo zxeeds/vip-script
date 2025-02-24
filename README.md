@@ -33,14 +33,14 @@
 - SLOWDNS 5300
 ```
 ### Author
-```
 VIP DIGITAL :
 <a href="https://t.me/sannpro" target=”_blank”>SANN PRO</a><br>
 ```
 ```
 ``
 ```
-repository/
+# Repository
+```
 │
 ├── main.sh                 # Script utama instalasi VPN
 ├── api-management.sh       # Script manajemen API user
@@ -70,3 +70,4 @@ repository/
     └── logs/               # Folder log API
         ├── access.log
         └── error.log
+```
