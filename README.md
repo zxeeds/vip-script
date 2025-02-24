@@ -35,10 +35,7 @@
 ### Author
 VIP DIGITAL :
 <a href="https://t.me/sannpro" target=”_blank”>SANN PRO</a><br>
-```
-```
-```
-```
+
 ### Repository
 ```
 vip-script/
