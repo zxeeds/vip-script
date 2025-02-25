@@ -38,15 +38,15 @@ prepare_directory() {
 configure_files() {
     log_install "Mengatur konfigurasi file"
     
-    # Copy app.py
-    cp api/app.py "$API_DIR/app.py"
+    # Download app.py
+    wget -O "$API_DIR/app.py" "https://raw.githubusercontent.com/username/repo/main/api/app.py"
     
-    # Copy api-management.sh untuk manajemen user
-    cp api/api-management.sh "$API_DIR/api-management.sh"
+    # Download api-management.sh
+    wget -O "$API_DIR/api-management.sh" "https://raw.githubusercontent.com/username/repo/main/api/api-management.sh"
     chmod +x "$API_DIR/api-management.sh"
     
-    # Copy config.json
-    cp api/config.json "$API_DIR/config.json"
+    # Download config.json
+    wget -O "$API_DIR/config.json" "https://raw.githubusercontent.com/username/repo/main/api/config.json"
     chmod 644 "$API_DIR/config.json"
 }
 
