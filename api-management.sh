@@ -39,14 +39,14 @@ configure_files() {
     log_install "Mengatur konfigurasi file"
     
     # Download app.py
-    wget -O "$API_DIR/app.py" "https://raw.githubusercontent.com/username/repo/main/api/app.py"
+    wget -O "$API_DIR/app.py" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/app.py"
     
     # Download api-management.sh
-    wget -O "$API_DIR/api-management.sh" "https://raw.githubusercontent.com/username/repo/main/api/api-management.sh"
+    wget -O "$API_DIR/api-management.sh" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/api-management.sh"
     chmod +x "$API_DIR/api-management.sh"
     
     # Download config.json
-    wget -O "$API_DIR/config.json" "https://raw.githubusercontent.com/username/repo/main/api/config.json"
+    wget -O "$API_DIR/config.json" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/config.json"
     chmod 644 "$API_DIR/config.json"
 }
 
