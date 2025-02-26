@@ -64,11 +64,23 @@ generate_vmess_config() {
     local username="$2"
     local config_path="/etc/xray/config.json"
 
+    # Debug: Cetak semua inbound vmess
+    echo "Debug: Semua inbound Vmess" >&2
+    jq '.inbounds[] | select(.protocol == "vmess")' "$config_path" >&2
+
+    # Debug: Cetak inbound dengan clients
+    echo "Debug: Inbound Vmess dengan clients" >&2
+    jq '.inbounds[] | select(.protocol == "vmess" and .settings.clients)' "$config_path" >&2
+
     # Baca konfigurasi existing
     local updated_config=$(jq --arg uuid "$uuid" --arg username "$username" \
         '.inbounds[] | select(.protocol == "vmess" and .settings.clients) | 
         .settings.clients += [{"id": $uuid, "alterId": 0, "email": $username}]' \
         "$config_path")
+
+    # Debug: Cetak updated_config
+    echo "Debug: Updated Config" >&2
+    echo "$updated_config" >&2
 
     # Perbarui konfigurasi
     if [[ -n "$updated_config" ]]; then
@@ -85,7 +97,7 @@ generate_vmess_config() {
         # Bersihkan file sementara
         rm -f /tmp/xray_config_temp.json
     else
-        echo "Gagal menambahkan user Vmess"
+        echo "Gagal menambahkan user Vmess" >&2
         return 1
     fi
 }
