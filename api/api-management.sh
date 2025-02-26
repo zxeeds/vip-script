@@ -93,52 +93,49 @@ add_user() {
     echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$ip_limit\"}"
 }
 
-# Fungsi generate konfigurasi Vmess
 generate_vmess_config() {
     local uuid="$1"
     local username="$2"
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
 
-    # Baca konfigurasi existing
-    local updated_config=$(jq --arg uuid "$uuid" \
-        --arg username "$username" \
-        --arg domain "$domain" \
-        '.inbounds[] | 
-        select(.protocol == "vmess" and .streamSettings.network == "ws") | 
-        .settings.clients += [{"id": $uuid, "alterId": 0, "email": $username}]' \
-        "$config_path")
+    # Perbarui konfigurasi Vmess WebSocket
+    jq --arg uuid "$uuid" \
+       --arg username "$username" \
+       --arg domain "$domain" '
+    (.inbounds[] | 
+    select(.protocol == "vmess" and .streamSettings.network == "ws") | 
+    .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]
+    ' "$config_path" > "$config_path.tmp"
 
-    # Perbarui konfigurasi
-    if [[ -n "$updated_config" ]]; then
-        echo "$updated_config" > /tmp/xray_config_temp.json
-        
-        jq -s '.[0] * .[1]' "$config_path" /tmp/xray_config_temp.json > "$config_path.tmp"
-        
-        mv "$config_path" "$config_path.bak"
-        mv "$config_path.tmp" "$config_path"
-        
-        rm -f /tmp/xray_config_temp.json
-    else
-        echo "Gagal menambahkan user Vmess" >&2
-        return 1
-    fi
+    # Perbarui konfigurasi Vmess gRPC
+    jq --arg uuid "$uuid" \
+       --arg username "$username" \
+       --arg domain "$domain" '
+    (.inbounds[] | 
+    select(.protocol == "vmess" and .streamSettings.network == "grpc") | 
+    .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]
+    ' "$config_path.tmp" > "$config_path.new"
+
+    # Backup dan perbarui konfigurasi
+    mv "$config_path" "$config_path.bak"
+    mv "$config_path.new" "$config_path"
 
     # Tambahkan konfigurasi tambahan
     mkdir -p /var/www/html
     cat > "/var/www/html/vmess-$username.txt" <<-END
-[server]
-remarks = $username
-server = $domain
-port = 443
-type = vmess
-id = $uuid
-alterId = 0
-network = ws
-path = /vmess
-tls = true
-allowInsecure = false
-END
+    [server]
+    remarks = $username
+    server = $domain
+    port = 443
+    type = vmess
+    id = $uuid
+    alterId = 0
+    network = ws
+    path = /vmess
+    tls = true
+    allowInsecure = false
+    END
 
     # Restart Xray untuk memastikan konfigurasi berlaku
     systemctl restart xray
