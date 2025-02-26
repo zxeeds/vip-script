@@ -99,13 +99,8 @@ generate_vmess_config() {
     local username="$2"
     local config_path="/etc/xray/config.json"
 
-    # Debug: Cetak semua inbound vmess
-    echo "Debug: Semua inbound Vmess" >&2
-    jq '.inbounds[] | select(.protocol == "vmess")' "$config_path" >&2
-
-    # Debug: Cetak inbound dengan clients
-    echo "Debug: Inbound Vmess dengan clients" >&2
-    jq '.inbounds[] | select(.protocol == "vmess" and .settings.clients)' "$config_path" >&2
+    # Hapus debug output atau arahkan ke file log
+    jq '.inbounds[] | select(.protocol == "vmess")' "$config_path" 2>/dev/null
 
     # Baca konfigurasi existing
     local updated_config=$(jq --arg uuid "$uuid" --arg username "$username" \
@@ -113,23 +108,15 @@ generate_vmess_config() {
         .settings.clients += [{"id": $uuid, "alterId": 0, "email": $username}]' \
         "$config_path")
 
-    # Debug: Cetak updated_config
-    echo "Debug: Updated Config" >&2
-    echo "$updated_config" >&2
-
     # Perbarui konfigurasi
     if [[ -n "$updated_config" ]]; then
-        # Simpan konfigurasi sementara
         echo "$updated_config" > /tmp/xray_config_temp.json
         
-        # Gabungkan kembali dengan konfigurasi asli
         jq -s '.[0] * .[1]' "$config_path" /tmp/xray_config_temp.json > "$config_path.tmp"
         
-        # Backup dan perbarui konfigurasi
         mv "$config_path" "$config_path.bak"
         mv "$config_path.tmp" "$config_path"
         
-        # Bersihkan file sementara
         rm -f /tmp/xray_config_temp.json
     else
         echo "Gagal menambahkan user Vmess" >&2
@@ -279,16 +266,10 @@ main() {
     done
     
     # Aksi
-    case "$2" in
+     case "$2" in
         "add")
-            # Debug: Cetak parameter tambahan
-            echo "Username: $3"
-            echo "Protokol: $4"
-            echo "Masa Aktif: $5"
-            echo "Quota: $6"
-            echo "IP Limit: $7"
-            
-            add_user "$3" "$4" "$5" "$6" "$7"
+            # Redirect debug output
+            add_user "$3" "$4" "$5" "$6" "$7" 2>/dev/null
             ;;
         "delete")
             delete_user "$3"
