@@ -98,13 +98,14 @@ generate_vmess_config() {
     local uuid="$1"
     local username="$2"
     local config_path="/etc/xray/config.json"
-
-    # Hapus debug output atau arahkan ke file log
-    jq '.inbounds[] | select(.protocol == "vmess")' "$config_path" 2>/dev/null
+    local domain=$(cat /etc/xray/domain)
 
     # Baca konfigurasi existing
-    local updated_config=$(jq --arg uuid "$uuid" --arg username "$username" \
-        '.inbounds[] | select(.protocol == "vmess" and .settings.clients) | 
+    local updated_config=$(jq --arg uuid "$uuid" \
+        --arg username "$username" \
+        --arg domain "$domain" \
+        '.inbounds[] | 
+        select(.protocol == "vmess" and .streamSettings.network == "ws") | 
         .settings.clients += [{"id": $uuid, "alterId": 0, "email": $username}]' \
         "$config_path")
 
@@ -122,6 +123,25 @@ generate_vmess_config() {
         echo "Gagal menambahkan user Vmess" >&2
         return 1
     fi
+
+    # Tambahkan konfigurasi tambahan
+    mkdir -p /var/www/html
+    cat > "/var/www/html/vmess-$username.txt" <<-END
+[server]
+remarks = $username
+server = $domain
+port = 443
+type = vmess
+id = $uuid
+alterId = 0
+network = ws
+path = /vmess
+tls = true
+allowInsecure = false
+END
+
+    # Restart Xray untuk memastikan konfigurasi berlaku
+    systemctl restart xray
 }
 
 # Fungsi generate konfigurasi Vless
