@@ -16,11 +16,27 @@ validate_api_key() {
     fi
 }
 
+# Fungsi untuk memeriksa apakah user sudah ada
+is_user_exists() {
+    local username="$1"
+    
+    # Cek apakah user dengan username sudah ada
+    jq -e --arg username "$username" \
+        '.users[] | select(.username == $username)' \
+        "$USER_DB" > /dev/null
+}
+
 # Tambah User
 add_user() {
     local username="$1"
     local protocol="$2"
     local validity_days="${3:-30}"
+
+    # Cek apakah user sudah ada
+    if is_user_exists "$username"; then
+        echo "{\"status\": \"error\", \"message\": \"Username sudah digunakan\"}"
+        exit 1
+    fi
 
     # Generate UUID
     local uuid=$(uuidgen)
