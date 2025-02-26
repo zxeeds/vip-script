@@ -16,27 +16,37 @@ def validate_api_key(key):
 def manage_user():
     api_key = request.headers.get('Authorization')
     
+    # Debug: Cetak headers dan data
+    print("Headers:", request.headers)
+    print("Data:", request.get_json())
+    
     if not validate_api_key(api_key):
         return jsonify({
             'status': 'error', 
             'message': 'Invalid API Key'
         }), 403
     
-    data = request.json
+    data = request.get_json()
+    
+    # Debug: Cetak data setelah parsing
+    print("Parsed Data:", data)
+    
     action = data.get('action')
     username = data.get('username')
     protocol = data.get('protocol', 'vmess')
     validity = data.get('validity', 30)
     
-    # Tambahan input untuk quota dan IP limit
-    quota = data.get('quota', 100)  # Default 100 GB
-    ip_limit = data.get('ip_limit', 3)  # Default 3 IP
+    # Tambahan untuk quota dan IP limit
+    quota = data.get('quota', 100)
+    ip_limit = data.get('ip_limit', 3)
     
-    if not username:
-        return jsonify({
-            'status': 'error', 
-            'message': 'Username is required'
-        }), 400
+    # Cetak semua parameter
+    print(f"Action: {action}")
+    print(f"Username: {username}")
+    print(f"Protocol: {protocol}")
+    print(f"Validity: {validity}")
+    print(f"Quota: {quota}")
+    print(f"IP Limit: {ip_limit}")
     
     try:
         result = subprocess.run([
@@ -50,6 +60,11 @@ def manage_user():
             str(ip_limit)
         ], capture_output=True, text=True)
         
+        # Debug: Cetak output subprocess
+        print("Subprocess STDOUT:", result.stdout)
+        print("Subprocess STDERR:", result.stderr)
+        print("Return Code:", result.returncode)
+        
         if result.returncode == 0:
             return jsonify({
                 'status': 'success', 
@@ -62,6 +77,8 @@ def manage_user():
             }), 500
     
     except Exception as e:
+        # Debug: Cetak exception
+        print("Exception:", str(e))
         return jsonify({
             'status': 'error', 
             'message': str(e)
