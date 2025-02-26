@@ -25,7 +25,7 @@
       },
       "inbounds": [
       {
-      "listen": "0.0.0.0",
+      "listen": "127.0.0.1",
       "port": 10000,
       "protocol": "dokodemo-door",
       "settings": {
@@ -34,7 +34,7 @@
       "tag": "api"
       },
       {
-     "listen": "0.0.0.0",
+     "listen": "127.0.0.1",
      "port": "10001",
      "protocol": "vless",
       "settings": {
@@ -54,7 +54,7 @@
         }
      },
      {
-     "listen": "0.0.0.0",
+     "listen": "127.0.0.1",
      "port": "10002",
      "protocol": "vmess",
       "settings": {
@@ -74,7 +74,7 @@
          }
        },
        {
-      "listen": "0.0.0.0",
+      "listen": "127.0.0.1",
       "port": "10003",
       "protocol": "trojan",
       "settings": {
@@ -95,7 +95,7 @@
          }
      },
       {
-         "listen": "0.0.0.0",
+         "listen": "127.0.0.1",
         "port": "10004",
         "protocol": "shadowsocks",
         "settings": {
@@ -116,7 +116,7 @@
         }
      },
       {
-        "listen": "0.0.0.0",
+        "listen": "127.0.0.1",
         "port": "10005",
         "protocol": "vless",
         "settings": {
@@ -136,7 +136,7 @@
         }
      },
      {
-      "listen": "0.0.0.0",
+      "listen": "127.0.0.1",
       "port": "10006",
      "protocol": "vmess",
       "settings": {
@@ -156,7 +156,7 @@
         }
      },
      {
-        "listen": "0.0.0.0",
+        "listen": "127.0.0.1",
         "port": "10007",
         "protocol": "trojan",
         "settings": {
@@ -176,7 +176,7 @@
       }
    },
    {
-    "listen": "0.0.0.0",
+    "listen": "127.0.0.1",
     "port": "10008",
     "protocol": "shadowsocks",
     "settings": {
