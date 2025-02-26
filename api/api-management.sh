@@ -26,17 +26,15 @@ is_user_exists() {
         "$USER_DB" > /dev/null
 }
 
-# Tambah User
+# Modifikasi fungsi add_user untuk meminta input tambahan
 add_user() {
     local username="$1"
     local protocol="$2"
     local validity_days="${3:-30}"
-
-    # Cek apakah user sudah ada
-    if is_user_exists "$username"; then
-        echo "{\"status\": \"error\", \"message\": \"Username sudah digunakan\"}"
-        exit 1
-    fi
+    
+    # Minta input tambahan
+    local quota=$(get_user_input "Masukkan limit quota (GB)" "100")
+    local iplimit=$(get_user_input "Masukkan limit IP" "3")
 
     # Generate UUID
     local uuid=$(uuidgen)
@@ -47,19 +45,30 @@ add_user() {
        --arg uuid "$uuid" \
        --arg protocol "$protocol" \
        --arg expiry "$expiry_date" \
-       '.users += [{"username": $username, "uuid": $uuid, "protocol": $protocol, "expiry": $expiry}]' \
+       --arg quota "$quota" \
+       --arg iplimit "$iplimit" \
+       '.users += [{"username": $username, "uuid": $uuid, "protocol": $protocol, "expiry": $expiry, "quota": $quota, "iplimit": $iplimit}]' \
        "$USER_DB" > temp.json && mv temp.json "$USER_DB"
 
-    # Generate konfigurasi sesuai protokol
+    # Fungsi untuk mencatat user di database spesifik protokol
+    record_user_to_specific_db() {
+        local db_path="$1"
+        echo "### ${username} ${expiry_date} ${uuid} ${quota} ${iplimit}" >> "$db_path"
+    }
+
+    # Generate konfigurasi dan catat user sesuai protokol
     case "$protocol" in
         "vmess")
             generate_vmess_config "$uuid" "$username"
+            record_user_to_specific_db "/etc/vmess/.vmess.db"
             ;;
         "vless")
             generate_vless_config "$uuid" "$username"
+            record_user_to_specific_db "/etc/vless/.vless.db"
             ;;
         "trojan")
             generate_trojan_config "$uuid" "$username"
+            record_user_to_specific_db "/etc/trojan/.trojan.db"
             ;;
         *)
             echo "Protokol tidak didukung"
@@ -67,11 +76,23 @@ add_user() {
             ;;
     esac
 
+    # Tambahan: Simpan limit IP jika diperlukan
+    if [[ "$iplimit" -gt 0 ]]; then
+        mkdir -p "/etc/kyt/limit/${protocol}/ip"
+        echo "$iplimit" > "/etc/kyt/limit/${protocol}/ip/${username}"
+    fi
+
+    # Tambahan: Simpan quota jika diperlukan
+    if [[ "$quota" -gt 0 ]]; then
+        mkdir -p "/etc/files/${protocol}"
+        echo "$((quota * 1024 * 1024 * 1024))" > "/etc/files/${protocol}/${username}"
+    fi
+
     # Restart Xray
     systemctl restart xray
 
     # Keluarkan informasi
-    echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\"}"
+    echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$iplimit\"}"
 }
 
 # Fungsi generate konfigurasi Vmess
