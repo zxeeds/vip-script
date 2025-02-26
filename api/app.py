@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import subprocess
 import json
 import os
+import traceback  # Tambahkan ini
 
 app = Flask(__name__)
 CONFIG_PATH = '/etc/vpn-api/config.json'
@@ -14,71 +15,87 @@ def validate_api_key(key):
 
 @app.route('/api/user', methods=['POST'])
 def manage_user():
-    api_key = request.headers.get('Authorization')
-    
-    # Debug: Cetak headers dan data
-    print("Headers:", request.headers)
-    print("Data:", request.get_json())
-    
-    if not validate_api_key(api_key):
-        return jsonify({
-            'status': 'error', 
-            'message': 'Invalid API Key'
-        }), 403
-    
-    data = request.get_json()
-    
-    # Debug: Cetak data setelah parsing
-    print("Parsed Data:", data)
-    
-    action = data.get('action')
-    username = data.get('username')
-    protocol = data.get('protocol', 'vmess')
-    validity = data.get('validity', 30)
-    
-    # Tambahan untuk quota dan IP limit
-    quota = data.get('quota', 100)
-    ip_limit = data.get('ip_limit', 3)
-    
-    # Cetak semua parameter
-    print(f"Action: {action}")
-    print(f"Username: {username}")
-    print(f"Protocol: {protocol}")
-    print(f"Validity: {validity}")
-    print(f"Quota: {quota}")
-    print(f"IP Limit: {ip_limit}")
-    
     try:
-        result = subprocess.run([
-            API_SCRIPT, 
-            api_key,
-            action, 
-            username, 
-            protocol, 
-            str(validity),
-            str(quota),
-            str(ip_limit)
-        ], capture_output=True, text=True)
+        # Debug: Cetak headers
+        print("Headers:", dict(request.headers))
         
-        # Debug: Cetak output subprocess
-        print("Subprocess STDOUT:", result.stdout)
-        print("Subprocess STDERR:", result.stderr)
-        print("Return Code:", result.returncode)
+        # Debug: Cetak raw data
+        print("Raw Data:", request.get_data(as_text=True))
         
-        if result.returncode == 0:
-            return jsonify({
-                'status': 'success', 
-                'output': json.loads(result.stdout)
-            })
-        else:
+        api_key = request.headers.get('Authorization')
+        
+        if not validate_api_key(api_key):
             return jsonify({
                 'status': 'error', 
-                'message': result.stderr
+                'message': 'Invalid API Key'
+            }), 403
+        
+        # Gunakan get_json dengan silent=True untuk debugging
+        data = request.get_json(silent=True)
+        
+        # Debug: Cetak data yang di-parse
+        print("Parsed Data:", data)
+        
+        if data is None:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Invalid JSON data'
+            }), 400
+        
+        action = data.get('action')
+        username = data.get('username')
+        protocol = data.get('protocol', 'vmess')
+        validity = data.get('validity', 30)
+        
+        # Tambahan input untuk quota dan IP limit
+        quota = data.get('quota', 100)  # Default 100 GB
+        ip_limit = data.get('ip_limit', 3)  # Default 3 IP
+        
+        if not username:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Username is required'
+            }), 400
+        
+        try:
+            result = subprocess.run([
+                API_SCRIPT, 
+                api_key,
+                action, 
+                username, 
+                protocol, 
+                str(validity),
+                str(quota),
+                str(ip_limit)
+            ], capture_output=True, text=True)
+            
+            # Debug: Cetak output subprocess
+            print("Subprocess STDOUT:", result.stdout)
+            print("Subprocess STDERR:", result.stderr)
+            print("Return Code:", result.returncode)
+            
+            if result.returncode == 0:
+                return jsonify({
+                    'status': 'success', 
+                    'output': json.loads(result.stdout)
+                })
+            else:
+                return jsonify({
+                    'status': 'error', 
+                    'message': result.stderr
+                }), 500
+        
+        except Exception as e:
+            # Cetak full traceback
+            print("Exception:", traceback.format_exc())
+            return jsonify({
+                'status': 'error', 
+                'message': str(e)
             }), 500
     
     except Exception as e:
-        # Debug: Cetak exception
-        print("Exception:", str(e))
+        # Cetak full traceback untuk error di luar subprocess
+        print("Global Exception:", traceback.format_exc())
         return jsonify({
             'status': 'error', 
             'message': str(e)
