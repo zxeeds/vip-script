@@ -16,6 +16,9 @@ def validate_api_key(key):
 @app.route('/api/user', methods=['POST'])
 def manage_user():
     try:
+        # Logging tambahan
+        logger.debug("Headers: %s", dict(request.headers))
+        logger.debug("Raw Data: %s", request.get_data(as_text=True))
         # Debug: Cetak headers
         print("Headers:", dict(request.headers))
         
@@ -86,6 +89,7 @@ def manage_user():
                 }), 500
         
         except Exception as e:
+            logger.error("Error: %s", traceback.format_exc())
             # Cetak full traceback
             print("Exception:", traceback.format_exc())
             return jsonify({
