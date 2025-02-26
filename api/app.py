@@ -4,6 +4,7 @@ import json
 import os
 import logging
 import traceback
+import re
 
 # Konfigurasi logging
 logging.basicConfig(level=logging.DEBUG, 
@@ -18,7 +19,29 @@ app = Flask(__name__)
 CONFIG_PATH = '/etc/vpn-api/config.json'
 API_SCRIPT = '/etc/vpn-api/api-management.sh'
 
+def clean_subprocess_output(output):
+    """
+    Membersihkan output subprocess untuk mendapatkan JSON valid
+    """
+    # Pisahkan baris dan cari baris JSON terakhir
+    lines = output.split('\n')
+    for line in reversed(lines):
+        line = line.strip()
+        try:
+            # Coba parsing JSON
+            json_data = json.loads(line)
+            return line
+        except json.JSONDecodeError:
+            continue
+    
+    # Jika tidak ada JSON valid, log seluruh output
+    logger.warning(f"Tidak dapat menemukan JSON valid dalam output: {output}")
+    return output
+
 def validate_api_key(key):
+    """
+    Validasi API key dari file konfigurasi
+    """
     with open(CONFIG_PATH, 'r') as f:
         config = json.load(f)
     return key == config.get('api_key')
@@ -51,12 +74,13 @@ def manage_user():
                 'message': 'Invalid JSON data'
             }), 400
         
+        # Ekstrak parameter
         action = data.get('action')
         username = data.get('username')
         protocol = data.get('protocol', 'vmess')
         validity = data.get('validity', 30)
         
-        # Tambahan input untuk quota dan IP limit
+        # Parameter tambahan
         quota = data.get('quota', 100)  # Default 100 GB
         ip_limit = data.get('ip_limit', 3)  # Default 3 IP
         
@@ -68,6 +92,7 @@ def manage_user():
             }), 400
         
         try:
+            # Jalankan subprocess dengan parameter lengkap
             result = subprocess.run([
                 API_SCRIPT, 
                 api_key,
@@ -85,10 +110,20 @@ def manage_user():
             logger.debug("Return Code: %s", result.returncode)
             
             if result.returncode == 0:
-                return jsonify({
-                    'status': 'success', 
-                    'output': json.loads(result.stdout)
-                })
+                # Bersihkan output subprocess
+                clean_output = clean_subprocess_output(result.stdout)
+                try:
+                    output_json = json.loads(clean_output)
+                    return jsonify({
+                        'status': 'success', 
+                        'output': output_json
+                    })
+                except json.JSONDecodeError:
+                    logger.error(f"Tidak dapat parsing JSON: {clean_output}")
+                    return jsonify({
+                        'status': 'error', 
+                        'message': 'Gagal memproses output'
+                    }), 500
             else:
                 logger.error("Subprocess Error: %s", result.stderr)
                 return jsonify({
