@@ -4,7 +4,6 @@ import json
 import os
 
 app = Flask(__name__)
-
 CONFIG_PATH = '/etc/vpn-api/config.json'
 API_SCRIPT = '/etc/vpn-api/api-management.sh'
 
@@ -29,6 +28,10 @@ def manage_user():
     protocol = data.get('protocol', 'vmess')
     validity = data.get('validity', 30)
     
+    # Tambahan input untuk quota dan IP limit
+    quota = data.get('quota', 100)  # Default 100 GB
+    ip_limit = data.get('ip_limit', 3)  # Default 3 IP
+    
     if not username:
         return jsonify({
             'status': 'error', 
@@ -38,16 +41,19 @@ def manage_user():
     try:
         result = subprocess.run([
             API_SCRIPT, 
+            api_key,
             action, 
             username, 
             protocol, 
-            str(validity)
+            str(validity),
+            str(quota),
+            str(ip_limit)
         ], capture_output=True, text=True)
         
         if result.returncode == 0:
             return jsonify({
                 'status': 'success', 
-                'output': result.stdout
+                'output': json.loads(result.stdout)
             })
         else:
             return jsonify({
@@ -62,5 +68,5 @@ def manage_user():
         }), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8081))
-    app.run(host='0.0.0.0', port=8081)
+    port = int(os.environ.get('PORT', 8082))
+    app.run(host='0.0.0.0', port=port)
