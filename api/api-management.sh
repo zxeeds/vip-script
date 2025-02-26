@@ -31,10 +31,8 @@ add_user() {
     local username="$1"
     local protocol="$2"
     local validity_days="${3:-30}"
-    
-    # Minta input tambahan
-    local quota=$(get_user_input "Masukkan limit quota (GB)" "100")
-    local iplimit=$(get_user_input "Masukkan limit IP" "3")
+    local quota="${4:-100}"      # Tambah parameter quota
+    local ip_limit="${5:-3}"     # Tambah parameter IP limit
 
     # Generate UUID
     local uuid=$(uuidgen)
@@ -46,7 +44,7 @@ add_user() {
        --arg protocol "$protocol" \
        --arg expiry "$expiry_date" \
        --arg quota "$quota" \
-       --arg iplimit "$iplimit" \
+       --arg iplimit "$ip_limit" \
        '.users += [{"username": $username, "uuid": $uuid, "protocol": $protocol, "expiry": $expiry, "quota": $quota, "iplimit": $iplimit}]' \
        "$USER_DB" > temp.json && mv temp.json "$USER_DB"
 
@@ -76,13 +74,13 @@ add_user() {
             ;;
     esac
 
-    # Tambahan: Simpan limit IP jika diperlukan
-    if [[ "$iplimit" -gt 0 ]]; then
+    # Simpan limit IP
+    if [[ "$ip_limit" -gt 0 ]]; then
         mkdir -p "/etc/kyt/limit/${protocol}/ip"
-        echo "$iplimit" > "/etc/kyt/limit/${protocol}/ip/${username}"
+        echo "$ip_limit" > "/etc/kyt/limit/${protocol}/ip/${username}"
     fi
-
-    # Tambahan: Simpan quota jika diperlukan
+    
+    # Simpan quota
     if [[ "$quota" -gt 0 ]]; then
         mkdir -p "/etc/files/${protocol}"
         echo "$((quota * 1024 * 1024 * 1024))" > "/etc/files/${protocol}/${username}"
@@ -92,7 +90,7 @@ add_user() {
     systemctl restart xray
 
     # Keluarkan informasi
-    echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$iplimit\"}"
+    echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$ip_limit\"}"
 }
 
 # Fungsi generate konfigurasi Vmess
@@ -274,10 +272,23 @@ main() {
     # Validasi API Key
     validate_api_key "$1"
     
+    # Debug: Cetak semua argumen
+    echo "Argumen diterima:"
+    for arg in "$@"; do
+        echo "$arg"
+    done
+    
     # Aksi
     case "$2" in
         "add")
-            add_user "$3" "$4" "$5"
+            # Debug: Cetak parameter tambahan
+            echo "Username: $3"
+            echo "Protokol: $4"
+            echo "Masa Aktif: $5"
+            echo "Quota: $6"
+            echo "IP Limit: $7"
+            
+            add_user "$3" "$4" "$5" "$6" "$7"
             ;;
         "delete")
             delete_user "$3"
