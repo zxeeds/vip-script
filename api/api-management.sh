@@ -93,6 +93,7 @@ add_user() {
     echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$ip_limit\"}"
 }
 
+# Fungsi generate konfigurasi Vmess
 generate_vmess_config() {
     local uuid="$1"
     local username="$2"
@@ -124,23 +125,22 @@ generate_vmess_config() {
     # Tambahkan konfigurasi tambahan
     mkdir -p /var/www/html
     cat > "/var/www/html/vmess-$username.txt" <<-END
-    [server]
-    remarks = $username
-    server = $domain
-    port = 443
-    type = vmess
-    id = $uuid
-    alterId = 0
-    network = ws
-    path = /vmess
-    tls = true
-    allowInsecure = false
-    END
+[server]
+remarks = $username
+server = $domain
+port = 443
+type = vmess
+id = $uuid
+alterId = 0
+network = ws
+path = /vmess
+tls = true
+allowInsecure = false
+END
 
     # Restart Xray untuk memastikan konfigurasi berlaku
     systemctl restart xray
 }
-
 # Fungsi generate konfigurasi Vless
 generate_vless_config() {
     local uuid="$1"
