@@ -4,7 +4,6 @@ import json
 import os
 import logging
 import traceback
-import re
 
 # Konfigurasi logging
 logging.basicConfig(level=logging.DEBUG, 
@@ -19,32 +18,17 @@ app = Flask(__name__)
 CONFIG_PATH = '/etc/vpn-api/config.json'
 API_SCRIPT = '/etc/vpn-api/api-management.sh'
 
-def clean_subprocess_output(output):
-    """
-    Membersihkan output subprocess untuk mendapatkan JSON valid
-    """
-    # Pisahkan baris dan cari baris JSON terakhir
-    lines = output.split('\n')
-    for line in reversed(lines):
-        line = line.strip()
-        try:
-            # Coba parsing JSON
-            json_data = json.loads(line)
-            return line
-        except json.JSONDecodeError:
-            continue
-    
-    # Jika tidak ada JSON valid, log seluruh output
-    logger.warning(f"Tidak dapat menemukan JSON valid dalam output: {output}")
-    return output
-
 def validate_api_key(key):
     """
     Validasi API key dari file konfigurasi
     """
-    with open(CONFIG_PATH, 'r') as f:
-        config = json.load(f)
-    return key == config.get('api_key')
+    try:
+        with open(CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        return key == config.get('api_key')
+    except Exception as e:
+        logger.error(f"Error validating API key: {e}")
+        return False
 
 @app.route('/api/user', methods=['POST'])
 def manage_user():
@@ -53,9 +37,11 @@ def manage_user():
         logger.debug("Request Headers: %s", dict(request.headers))
         logger.debug("Raw Request Data: %s", request.get_data(as_text=True))
         
+        # Ambil API Key dari header
         api_key = request.headers.get('Authorization')
         logger.debug("API Key: %s", api_key)
         
+        # Validasi API Key
         if not validate_api_key(api_key):
             logger.error("Invalid API Key")
             return jsonify({
@@ -63,7 +49,7 @@ def manage_user():
                 'message': 'Invalid API Key'
             }), 403
         
-        # Parse JSON dengan mode strict
+        # Parse JSON
         try:
             data = request.get_json(force=True)
             logger.debug("Parsed JSON Data: %s", data)
@@ -74,25 +60,35 @@ def manage_user():
                 'message': 'Invalid JSON data'
             }), 400
         
-        # Ekstrak parameter
+        # Ekstrak action
         action = data.get('action')
-        username = data.get('username')
-        protocol = data.get('protocol', 'vmess')
-        validity = data.get('validity', 30)
         
-        # Parameter tambahan
-        quota = data.get('quota', 100)  # Default 100 GB
-        ip_limit = data.get('ip_limit', 3)  # Default 3 IP
-        
-        if not username:
-            logger.error("Username is required")
+        # Validasi action
+        if action not in ['add', 'delete']:
+            logger.error("Invalid action: %s", action)
             return jsonify({
                 'status': 'error', 
-                'message': 'Username is required'
+                'message': 'Invalid action'
             }), 400
         
-        try:
-            # Jalankan subprocess dengan parameter lengkap
+        # Persiapkan argumen untuk subprocess
+        if action == 'add':
+            # Parameter untuk menambah user
+            username = data.get('username')
+            protocol = data.get('protocol', 'vmess')
+            validity = data.get('validity', 30)
+            quota = data.get('quota', 100)
+            ip_limit = data.get('ip_limit', 3)
+            
+            # Validasi username
+            if not username:
+                logger.error("Username is required")
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'Username is required'
+                }), 400
+            
+            # Jalankan subprocess untuk add user
             result = subprocess.run([
                 API_SCRIPT, 
                 api_key,
@@ -103,42 +99,60 @@ def manage_user():
                 str(quota),
                 str(ip_limit)
             ], capture_output=True, text=True)
+        
+        elif action == 'delete':
+            # Parameter untuk menghapus user
+            username = data.get('username')
+            protocol = data.get('protocol')
             
-            # Debug subprocess
-            logger.debug("Subprocess STDOUT: %s", result.stdout)
-            logger.debug("Subprocess STDERR: %s", result.stderr)
-            logger.debug("Return Code: %s", result.returncode)
-            
-            if result.returncode == 0:
-                # Bersihkan output subprocess
-                clean_output = clean_subprocess_output(result.stdout)
-                try:
-                    output_json = json.loads(clean_output)
-                    return jsonify({
-                        'status': 'success', 
-                        'output': output_json
-                    })
-                except json.JSONDecodeError:
-                    logger.error(f"Tidak dapat parsing JSON: {clean_output}")
-                    return jsonify({
-                        'status': 'error', 
-                        'message': 'Gagal memproses output'
-                    }), 500
-            else:
-                logger.error("Subprocess Error: %s", result.stderr)
+            # Validasi username dan protokol
+            if not username or not protocol:
+                logger.error("Username and protocol are required for deletion")
                 return jsonify({
                     'status': 'error', 
-                    'message': result.stderr
-                }), 500
+                    'message': 'Username and protocol are required'
+                }), 400
+            
+            # Jalankan subprocess untuk delete user
+            result = subprocess.run([
+                API_SCRIPT, 
+                api_key,
+                action, 
+                username,
+                protocol
+            ], capture_output=True, text=True)
         
-        except Exception as subprocess_error:
-            logger.error("Subprocess Exception: %s", traceback.format_exc())
+        # Debug subprocess
+        logger.debug("Subprocess STDOUT: %s", result.stdout)
+        logger.debug("Subprocess STDERR: %s", result.stderr)
+        logger.debug("Return Code: %s", result.returncode)
+        
+        # Proses hasil subprocess
+        if result.returncode == 0:
+            try:
+                # Coba parsing output sebagai JSON
+                output_json = json.loads(result.stdout.strip())
+                return jsonify({
+                    'status': 'success', 
+                    'output': output_json
+                })
+            except json.JSONDecodeError:
+                # Jika output bukan JSON valid
+                logger.error(f"Tidak dapat parsing JSON: {result.stdout}")
+                return jsonify({
+                    'status': 'success', 
+                    'message': result.stdout.strip()
+                })
+        else:
+            # Subprocess gagal
+            logger.error("Subprocess Error: %s", result.stderr)
             return jsonify({
                 'status': 'error', 
-                'message': str(subprocess_error)
+                'message': result.stderr.strip()
             }), 500
     
     except Exception as global_error:
+        # Tangani exception global
         logger.error("Global Exception: %s", traceback.format_exc())
         return jsonify({
             'status': 'error', 
