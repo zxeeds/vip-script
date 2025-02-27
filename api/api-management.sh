@@ -249,6 +249,7 @@ END
 # Fungsi validasi user sebelum menghapus
 validate_user_for_deletion() {
     local username="$1"
+    local protocol="$2"
     local config_path="/etc/vpn-api/config.json"
     local user_db="/etc/vpn-api/users.json"
 
@@ -256,51 +257,122 @@ validate_user_for_deletion() {
     if [[ -z "$username" ]]; then
         echo "Error: Username tidak boleh kosong" >&2
         return 1
-    fi
+    }
 
-    # Periksa apakah user ada di database
-    local user_exists=$(jq --arg username "$username" \
-        '.users[] | select(.username == $username)' "$user_db")
-    
-    if [[ -z "$user_exists" ]]; then
-        echo "Error: User '$username' tidak ditemukan" >&2
+    # Validasi protokol tidak kosong
+    if [[ -z "$protocol" ]]; then
+        echo "Error: Protokol tidak boleh kosong" >&2
         return 1
-    fi
-
-    # Ambil protokol user
-    local protocol=$(jq -r --arg username "$username" \
-        '.users[] | select(.username == $username) | .protocol' "$user_db")
+    }
 
     # Validasi protokol
     case "$protocol" in
         "vmess"|"vless"|"trojan")
-            # Protokol valid, kembalikan protokol
-            echo "$protocol"
-            return 0
+            # Protokol valid, lanjutkan
             ;;
         *)
-            echo "Error: Protokol tidak valid untuk user '$username'" >&2
+            echo "Error: Protokol tidak valid. Gunakan vmess/vless/trojan" >&2
             return 1
             ;;
     esac
+
+    # Periksa apakah user ada di database dengan protokol spesifik
+    local user_exists=$(jq --arg username "$username" --arg protocol "$protocol" \
+        '.users[] | select(.username == $username and .protocol == $protocol)' "$user_db")
+    
+    if [[ -z "$user_exists" ]]; then
+        echo "Error: User '$username' dengan protokol '$protocol' tidak ditemukan" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# Fungsi hapus user dari konfigurasi Vmess
+remove_vmess_user() {
+    local username="$1"
+    local config_path="/etc/xray/config.json"
+
+    # Hapus user dari konfigurasi Vmess WS
+    jq --arg username "$username" '
+    .inbounds[] | select(.protocol == "vmess" and .streamSettings.network == "ws") | 
+    .settings.clients = (.settings.clients | 
+    map(select(.email != $username)))
+    ' "$config_path" > "$config_path.tmp"
+
+    # Hapus user dari konfigurasi Vmess gRPC
+    jq --arg username "$username" '
+    .inbounds[] | select(.protocol == "vmess" and .streamSettings.network == "grpc") | 
+    .settings.clients = (.settings.clients | 
+    map(select(.email != $username)))
+    ' "$config_path.tmp" > "$config_path"
+
+    # Hapus file sementara
+    rm -f "$config_path.tmp"
+}
+
+# Fungsi hapus user dari konfigurasi Vless
+remove_vless_user() {
+    local username="$1"
+    local config_path="/etc/xray/config.json"
+
+    # Hapus user dari konfigurasi Vless WS
+    jq --arg username "$username" '
+    .inbounds[] | select(.protocol == "vless" and .streamSettings.network == "ws") | 
+    .settings.clients = (.settings.clients | 
+    map(select(.email != $username)))
+    ' "$config_path" > "$config_path.tmp"
+
+    # Hapus user dari konfigurasi Vless gRPC
+    jq --arg username "$username" '
+    .inbounds[] | select(.protocol == "vless" and .streamSettings.network == "grpc") | 
+    .settings.clients = (.settings.clients | 
+    map(select(.email != $username)))
+    ' "$config_path.tmp" > "$config_path"
+
+    # Hapus file sementara
+    rm -f "$config_path.tmp"
+}
+
+# Fungsi hapus user dari konfigurasi Trojan
+remove_trojan_user() {
+    local username="$1"
+    local config_path="/etc/xray/config.json"
+
+    # Hapus user dari konfigurasi Trojan WS
+    jq --arg username "$username" '
+    .inbounds[] | select(.protocol == "trojan" and .streamSettings.network == "ws") | 
+    .settings.clients = (.settings.clients | 
+    map(select(.email != $username)))
+    ' "$config_path" > "$config_path.tmp"
+
+    # Hapus user dari konfigurasi Trojan gRPC
+    jq --arg username "$username" '
+    .inbounds[] | select(.protocol == "trojan" and .streamSettings.network == "grpc") | 
+    .settings.clients = (.settings.clients | 
+    map(select(.email != $username)))
+    ' "$config_path.tmp" > "$config_path"
+
+    # Hapus file sementara
+    rm -f "$config_path.tmp"
 }
 
 # Fungsi hapus user
 delete_user() {
     local username="$1"
+    local protocol="$2"
     local config_path="/etc/xray/config.json"
     local user_db="/etc/vpn-api/users.json"
 
     # Validasi user
-    local protocol=$(validate_user_for_deletion "$username")
-    if [[ $? -ne 0 ]]; then
-        echo "{\"status\": \"error\", \"message\": \"$protocol\"}"
+    if ! validate_user_for_deletion "$username" "$protocol"; then
+        echo "{\"status\": \"error\", \"message\": \"Validasi gagal\"}"
         exit 1
     fi
 
     # Hapus dari database user
-    jq --arg username "$username" \
-        'del(.users[] | select(.username == $username))' \
+    jq --arg username "$username" --arg protocol "$protocol" \
+        'del(.users[] | select(.username == $username and .protocol == $protocol))' \
         "$user_db" > temp.json && mv temp.json "$user_db"
 
     # Hapus dari konfigurasi Xray sesuai protokol
@@ -328,9 +400,8 @@ delete_user() {
     systemctl restart xray
 
     # Keluarkan konfirmasi
-    echo "{\"status\": \"success\", \"message\": \"User $username berhasil dihapus\"}"
+    echo "{\"status\": \"success\", \"message\": \"User $username ($protocol) berhasil dihapus\"}"
 }
-
 # Main
 main() {
     # Validasi API Key
@@ -343,13 +414,13 @@ main() {
     done
     
     # Aksi
-     case "$2" in
+    case "$2" in
         "add")
             # Redirect debug output
             add_user "$3" "$4" "$5" "$6" "$7" 2>/dev/null
             ;;
         "delete")
-            delete_user "$3"
+            delete_user "$3" "$4"  # Tambahkan protokol
             ;;
         *)
             echo "Aksi tidak valid"
