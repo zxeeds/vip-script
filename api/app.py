@@ -130,18 +130,18 @@ def manage_user():
         # Proses hasil subprocess
         if result.returncode == 0:
             try:
-                # Coba parsing output sebagai JSON
                 output_json = json.loads(result.stdout.strip())
                 return jsonify({
                     'status': 'success', 
                     'output': output_json
                 })
-            except json.JSONDecodeError:
-                # Jika output bukan JSON valid
-                logger.error(f"Tidak dapat parsing JSON: {result.stdout}")
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON Parsing Error: {e}")
+                logger.error(f"Raw output: {result.stdout}")
                 return jsonify({
                     'status': 'error', 
-                    'message': 'Gagal memproses output'
+                    'message': 'Gagal memproses output',
+                    'raw_output': result.stdout
                 }), 500
         else:
             # Subprocess gagal
