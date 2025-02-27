@@ -11,7 +11,7 @@ validate_api_key() {
     local stored_key=$(jq -r '.api_key' "$CONFIG_PATH")
     
     if [[ "$provided_key" != "$stored_key" ]]; then
-        echo "Invalid API Key"
+        echo "{\"status\": \"error\", \"message\": \"Invalid API Key\"}"
         exit 1
     fi
 }
@@ -171,6 +171,8 @@ EOF
 generate_vmess_config() {
     local uuid="$1"
     local username="$2"
+    local quota="${3:-100}"
+    local ip_limit="${4:-3}"
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
@@ -205,7 +207,7 @@ END
         sed -i "/\b${username}\b/d" "/etc/vmess/.vmess.db"
     fi
     # Tambahkan entri baru
-    echo "### ${username} ${exp} ${uuid} ${Quota} ${iplimit}" >> "/etc/vmess/.vmess.db"
+    echo "### ${username} ${exp} ${uuid} ${quota} ${ip_limit}" >> "/etc/vmess/.vmess.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/vmess
@@ -227,6 +229,8 @@ END
 generate_vless_config() {
     local uuid="$1"
     local username="$2"
+    local quota="${3:-100}"
+    local ip_limit="${4:-3}"
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
@@ -260,7 +264,7 @@ END
         sed -i "/\b${username}\b/d" "/etc/vless/.vless.db"
     fi
     # Tambahkan entri baru
-    echo "### ${username} ${exp} ${uuid} ${Quota} ${iplimit}" >> "/etc/vless/.vless.db"
+    echo "### ${username} ${exp} ${uuid} ${quota} ${ip_limit}" >> "/etc/vless/.vless.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/vless
@@ -283,6 +287,8 @@ END
 generate_trojan_config() {
     local uuid="$1"
     local username="$2"
+    local quota="${3:-100}"
+    local ip_limit="${4:-3}"
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
@@ -316,7 +322,7 @@ END
         sed -i "/\b${username}\b/d" "/etc/trojan/.trojan.db"
     fi
     # Tambahkan entri baru
-    echo "### ${username} ${exp} ${uuid} ${Quota} ${iplimit}" >> "/etc/trojan/.trojan.db"
+    echo "### ${username} ${exp} ${uuid} ${quota} ${ip_limit}" >> "/etc/trojan/.trojan.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/trojan
@@ -473,23 +479,17 @@ main() {
     # Validasi API Key
     validate_api_key "$1"
     
-    # Debug: Cetak semua argumen
-    echo "Argumen diterima:"
-    for arg in "$@"; do
-        echo "$arg"
-    done
-    
     # Aksi
     case "$2" in
         "add")
-            # Redirect debug output
-            add_user "$3" "$4" "$5" "$6" "$7" 2>/dev/null
+            # Tambahkan parameter quota dan ip_limit dengan default
+            add_user "$3" "$4" "$5" "${6:-100}" "${7:-3}"
             ;;
         "delete")
-            delete_user "$3" "$4"  # Tambahkan protokol
+            delete_user "$3" "$4"
             ;;
         *)
-            echo "Aksi tidak valid"
+            echo "{\"status\": \"error\", \"message\": \"Aksi tidak valid\"}"
             exit 1
             ;;
     esac
