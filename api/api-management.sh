@@ -199,8 +199,13 @@ tls = true
 allowInsecure = false
 END
 
-    # Tambahkan ke database
-    echo "### ${username} ${exp} ${uuid} 100 3" >> /etc/vmess/.vmess.db
+    # Hapus entri lama jika sudah ada sebelum menambahkan
+    if [[ -f "/etc/vmess/.vmess.db" ]]; then
+        # Hapus baris dengan username yang sama
+        sed -i "/\b${username}\b/d" "/etc/vmess/.vmess.db"
+    fi
+    # Tambahkan entri baru
+    echo "### ${username} ${exp} ${uuid} ${Quota} ${iplimit}" >> "/etc/vmess/.vmess.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/vmess
@@ -249,8 +254,13 @@ tls = true
 allowInsecure = false
 END
 
-    # Tambahkan ke database
-    echo "### ${username} ${exp} ${uuid} 100 3" >> /etc/vless/.vless.db
+    # Hapus entri lama jika sudah ada sebelum menambahkan
+    if [[ -f "/etc/vless/.vless.db" ]]; then
+        # Hapus baris dengan username yang sama
+        sed -i "/\b${username}\b/d" "/etc/vless/.vless.db"
+    fi
+    # Tambahkan entri baru
+    echo "### ${username} ${exp} ${uuid} ${Quota} ${iplimit}" >> "/etc/vless/.vless.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/vless
@@ -300,8 +310,13 @@ tls = true
 allowInsecure = false
 END
 
-    # Tambahkan ke database
-    echo "### ${username} ${exp} ${uuid} 100 3" >> /etc/trojan/.trojan.db
+   # Hapus entri lama jika sudah ada sebelum menambahkan
+    if [[ -f "/etc/trojan/.trojan.db" ]]; then
+        # Hapus baris dengan username yang sama
+        sed -i "/\b${username}\b/d" "/etc/trojan/.trojan.db"
+    fi
+    # Tambahkan entri baru
+    echo "### ${username} ${exp} ${uuid} ${Quota} ${iplimit}" >> "/etc/trojan/.trojan.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/trojan
