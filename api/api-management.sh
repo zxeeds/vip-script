@@ -102,7 +102,7 @@ generate_vmess_config() {
     local temp_path="/etc/xray/config.json.tmp"
 
     # Validasi input
-    if [[ -z "$uuid" || -z "$username" ]]; then
+    if [[ -z "$uuid" ]] || [[ -z "$username" ]]; then
         echo "Error: UUID dan username diperlukan" >&2
         return 1
     }
@@ -122,7 +122,7 @@ generate_vmess_config() {
     # Buat backup sebelum manipulasi
     cp "$config_path" "$backup_path"
 
-    # Tambahkan user ke konfigurasi WebSocket
+    # Tambahkan user ke konfigurasi WebSocket Vmess
     jq --arg uuid "$uuid" \
        --arg username "$username" \
        '(.inbounds[] | 
@@ -130,7 +130,7 @@ generate_vmess_config() {
          .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]' \
        "$config_path" > "$temp_path.ws"
 
-    # Tambahkan user ke konfigurasi gRPC
+    # Tambahkan user ke konfigurasi gRPC Vmess
     jq --arg uuid "$uuid" \
        --arg username "$username" \
        '(.inbounds[] | 
@@ -143,13 +143,13 @@ generate_vmess_config() {
         echo "Error: Konfigurasi baru tidak valid" >&2
         # Kembalikan backup jika gagal
         mv "$backup_path" "$config_path"
-        rm "$temp_path"
+        rm -f "$temp_path" "$temp_path.ws"
         return 1
     }
 
     # Perbarui konfigurasi
     mv "$temp_path" "$config_path"
-    rm "$temp_path.ws"
+    rm -f "$temp_path.ws"
 
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
