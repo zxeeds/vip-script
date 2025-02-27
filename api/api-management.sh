@@ -98,78 +98,19 @@ generate_vmess_config() {
     local uuid="$1"
     local username="$2"
     local config_path="/etc/xray/config.json"
-    local backup_path="/etc/xray/config.json.bak"
-    local temp_path="/etc/xray/config.json.tmp"
+    local domain=$(cat /etc/xray/domain)
+    local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
 
-    # Debug: Cetak input
-    echo "Debug: UUID = $uuid" >&2
-    echo "Debug: Username = $username" >&2
+    # Tambahkan user ke konfigurasi Vmess WS
+    sed -i '/#vmess$/a\### '"$username $exp"'\
+},{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$username""'"' "$config_path"
 
-    # Validasi input
-    if [[ -z "$uuid" ]] || [[ -z "$username" ]]; then
-        echo "Error: UUID dan username diperlukan" >&2
-        return 1
-    fi
-
-    # Pastikan file konfigurasi ada dan tidak kosong
-    if [[ ! -s "$config_path" ]]; then
-        echo "Error: File konfigurasi kosong atau tidak ada" >&2
-        return 1
-    fi
-
-    # Validasi JSON sebelum manipulasi
-    if ! jq empty "$config_path" > /dev/null 2>&1; then
-        echo "Error: Konfigurasi JSON tidak valid" >&2
-        return 1
-    fi
-
-    # Debug: Cetak konfigurasi WS sebelum perubahan
-    echo "Debug: Konfigurasi WS sebelum perubahan:" >&2
-    jq '.inbounds[] | select(.protocol == "vmess" and .streamSettings.network == "ws")' "$config_path" >&2
-
-    # Buat backup sebelum manipulasi
-    cp "$config_path" "$backup_path"
-
-    # Tambahkan user ke konfigurasi WebSocket Vmess
-    jq --arg uuid "$uuid" \
-       --arg username "$username" \
-       '(.inbounds[] | 
-         select(.protocol == "vmess" and .streamSettings.network == "ws") | 
-         .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]' \
-       "$config_path" > "$temp_path.ws"
-
-    # Debug: Cetak konfigurasi WS setelah perubahan
-    echo "Debug: Konfigurasi WS setelah perubahan:" >&2
-    jq '.' "$temp_path.ws" >&2
-
-    # Tambahkan user ke konfigurasi gRPC Vmess
-    jq --arg uuid "$uuid" \
-       --arg username "$username" \
-       '(.inbounds[] | 
-         select(.protocol == "vmess" and .streamSettings.network == "grpc") | 
-         .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]' \
-       "$temp_path.ws" > "$temp_path"
-
-    # Debug: Cetak konfigurasi gRPC setelah perubahan
-    echo "Debug: Konfigurasi gRPC setelah perubahan:" >&2
-    jq '.' "$temp_path" >&2
-
-    # Validasi konfigurasi baru
-    if ! jq empty "$temp_path" > /dev/null 2>&1; then
-        echo "Error: Konfigurasi baru tidak valid" >&2
-        # Kembalikan backup jika gagal
-        mv "$backup_path" "$config_path"
-        rm -f "$temp_path" "$temp_path.ws"
-        return 1
-    fi
-
-    # Perbarui konfigurasi
-    mv "$temp_path" "$config_path"
-    rm -f "$temp_path.ws"
+    # Tambahkan user ke konfigurasi Vmess gRPC
+    sed -i '/#vmessgrpc$/a\### '"$username $exp"'\
+},{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$username""'"' "$config_path"
 
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
-    local domain=$(cat /etc/xray/domain)
     cat > "/var/www/html/vmess-$username.txt" <<-END
 [server]
 remarks = $username
@@ -184,14 +125,22 @@ tls = true
 allowInsecure = false
 END
 
-    # Log keberhasilan
-    echo "Berhasil menambahkan user $username dengan UUID $uuid" >&2
+    # Tambahkan ke database
+    echo "### ${username} ${exp} ${uuid} 100 3" >> /etc/vmess/.vmess.db
+
+    # Buat direktori jika belum ada
+    mkdir -p /etc/vmess
+    mkdir -p /etc/kyt/limit/vmess/ip
+
+    # Atur limit IP (default 3)
+    echo "3" > /etc/kyt/limit/vmess/ip/$username
+
+    # Atur quota (default 100 GB)
+    local quota_bytes=$((100 * 1024 * 1024 * 1024))
+    echo "$quota_bytes" > /etc/vmess/$username
 
     # Restart Xray
-    if ! systemctl restart xray; then
-        echo "Error: Gagal restart Xray" >&2
-        return 1
-    fi
+    systemctl restart xray
 
     return 0
 }
