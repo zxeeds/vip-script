@@ -140,9 +140,9 @@ def manage_user():
                 # Jika output bukan JSON valid
                 logger.error(f"Tidak dapat parsing JSON: {result.stdout}")
                 return jsonify({
-                    'status': 'success', 
-                    'message': result.stdout.strip()
-                })
+                    'status': 'error', 
+                    'message': 'Gagal memproses output'
+                }), 500
         else:
             # Subprocess gagal
             logger.error("Subprocess Error: %s", result.stderr)
