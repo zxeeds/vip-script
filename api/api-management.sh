@@ -256,7 +256,7 @@ validate_user_for_deletion() {
     if [[ -z "$username" ]]; then
         echo "Error: Username tidak boleh kosong" >&2
         return 1
-    }
+    fi
 
     # Periksa apakah user ada di database
     local user_exists=$(jq --arg username "$username" \
