@@ -288,75 +288,6 @@ validate_user_for_deletion() {
     return 0
 }
 
-# Fungsi hapus user dari konfigurasi Vmess
-remove_vmess_user() {
-    local username="$1"
-    local config_path="/etc/xray/config.json"
-
-    # Hapus user dari konfigurasi Vmess WS
-    jq --arg username "$username" '
-    .inbounds[] | select(.protocol == "vmess" and .streamSettings.network == "ws") | 
-    .settings.clients = (.settings.clients | 
-    map(select(.email != $username)))
-    ' "$config_path" > "$config_path.tmp"
-
-    # Hapus user dari konfigurasi Vmess gRPC
-    jq --arg username "$username" '
-    .inbounds[] | select(.protocol == "vmess" and .streamSettings.network == "grpc") | 
-    .settings.clients = (.settings.clients | 
-    map(select(.email != $username)))
-    ' "$config_path.tmp" > "$config_path"
-
-    # Hapus file sementara
-    rm -f "$config_path.tmp"
-}
-
-# Fungsi hapus user dari konfigurasi Vless
-remove_vless_user() {
-    local username="$1"
-    local config_path="/etc/xray/config.json"
-
-    # Hapus user dari konfigurasi Vless WS
-    jq --arg username "$username" '
-    .inbounds[] | select(.protocol == "vless" and .streamSettings.network == "ws") | 
-    .settings.clients = (.settings.clients | 
-    map(select(.email != $username)))
-    ' "$config_path" > "$config_path.tmp"
-
-    # Hapus user dari konfigurasi Vless gRPC
-    jq --arg username "$username" '
-    .inbounds[] | select(.protocol == "vless" and .streamSettings.network == "grpc") | 
-    .settings.clients = (.settings.clients | 
-    map(select(.email != $username)))
-    ' "$config_path.tmp" > "$config_path"
-
-    # Hapus file sementara
-    rm -f "$config_path.tmp"
-}
-
-# Fungsi hapus user dari konfigurasi Trojan
-remove_trojan_user() {
-    local username="$1"
-    local config_path="/etc/xray/config.json"
-
-    # Hapus user dari konfigurasi Trojan WS
-    jq --arg username "$username" '
-    .inbounds[] | select(.protocol == "trojan" and .streamSettings.network == "ws") | 
-    .settings.clients = (.settings.clients | 
-    map(select(.email != $username)))
-    ' "$config_path" > "$config_path.tmp"
-
-    # Hapus user dari konfigurasi Trojan gRPC
-    jq --arg username "$username" '
-    .inbounds[] | select(.protocol == "trojan" and .streamSettings.network == "grpc") | 
-    .settings.clients = (.settings.clients | 
-    map(select(.email != $username)))
-    ' "$config_path.tmp" > "$config_path"
-
-    # Hapus file sementara
-    rm -f "$config_path.tmp"
-}
-
 # Fungsi hapus user
 delete_user() {
     local username="$1"
@@ -369,6 +300,10 @@ delete_user() {
         echo "{\"status\": \"error\", \"message\": \"Validasi gagal\"}"
         exit 1
     fi
+
+    # Ambil UUID user untuk logging
+    local uuid=$(jq -r --arg username "$username" --arg protocol "$protocol" \
+        '.users[] | select(.username == $username and .protocol == $protocol) | .uuid' "$user_db")
 
     # Hapus dari database user
     jq --arg username "$username" --arg protocol "$protocol" \
@@ -399,8 +334,8 @@ delete_user() {
     # Restart Xray
     systemctl restart xray
 
-    # Keluarkan konfirmasi
-    echo "{\"status\": \"success\", \"message\": \"User $username ($protocol) berhasil dihapus\"}"
+    # Keluarkan konfirmasi dengan tambahan UUID
+    echo "{\"status\": \"success\", \"message\": \"User $username ($protocol) berhasil dihapus\", \"uuid\": \"$uuid\"}"
 }
 # Main
 main() {
