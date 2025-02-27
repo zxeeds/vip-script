@@ -246,16 +246,44 @@ END
     return 0
 }
 
-#delete vmess config
+# Fungsi hapus user dari konfigurasi Vmess
 remove_vmess_user() {
     local username="$1"
     local config_path="/etc/xray/config.json"
-
+    
     # Hapus user dari konfigurasi Vmess WS
     sed -i "/### $username /d" "$config_path"
     sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+    
+    # Hapus dari konfigurasi Vmess gRPC
+    sed -i "/### $username /d" "$config_path"
+    sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+}
 
-    # Hapus dari konfigurasi gRPC
+# Fungsi hapus user dari konfigurasi Vless
+remove_vless_user() {
+    local username="$1"
+    local config_path="/etc/xray/config.json"
+    
+    # Hapus user dari konfigurasi Vless WS
+    sed -i "/### $username /d" "$config_path"
+    sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+    
+    # Hapus dari konfigurasi Vless gRPC
+    sed -i "/### $username /d" "$config_path"
+    sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+}
+
+# Fungsi hapus user dari konfigurasi Trojan
+remove_trojan_user() {
+    local username="$1"
+    local config_path="/etc/xray/config.json"
+    
+    # Hapus user dari konfigurasi Trojan WS
+    sed -i "/### $username /d" "$config_path"
+    sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+    
+    # Hapus dari konfigurasi Trojan gRPC
     sed -i "/### $username /d" "$config_path"
     sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
 }
