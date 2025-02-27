@@ -101,6 +101,10 @@ generate_vmess_config() {
     local backup_path="/etc/xray/config.json.bak"
     local temp_path="/etc/xray/config.json.tmp"
 
+    # Debug: Cetak input
+    echo "Debug: UUID = $uuid" >&2
+    echo "Debug: Username = $username" >&2
+
     # Validasi input
     if [[ -z "$uuid" ]] || [[ -z "$username" ]]; then
         echo "Error: UUID dan username diperlukan" >&2
@@ -119,6 +123,10 @@ generate_vmess_config() {
         return 1
     fi
 
+    # Debug: Cetak konfigurasi WS sebelum perubahan
+    echo "Debug: Konfigurasi WS sebelum perubahan:" >&2
+    jq '.inbounds[] | select(.protocol == "vmess" and .streamSettings.network == "ws")' "$config_path" >&2
+
     # Buat backup sebelum manipulasi
     cp "$config_path" "$backup_path"
 
@@ -130,6 +138,10 @@ generate_vmess_config() {
          .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]' \
        "$config_path" > "$temp_path.ws"
 
+    # Debug: Cetak konfigurasi WS setelah perubahan
+    echo "Debug: Konfigurasi WS setelah perubahan:" >&2
+    jq '.' "$temp_path.ws" >&2
+
     # Tambahkan user ke konfigurasi gRPC Vmess
     jq --arg uuid "$uuid" \
        --arg username "$username" \
@@ -137,6 +149,10 @@ generate_vmess_config() {
          select(.protocol == "vmess" and .streamSettings.network == "grpc") | 
          .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $username}]' \
        "$temp_path.ws" > "$temp_path"
+
+    # Debug: Cetak konfigurasi gRPC setelah perubahan
+    echo "Debug: Konfigurasi gRPC setelah perubahan:" >&2
+    jq '.' "$temp_path" >&2
 
     # Validasi konfigurasi baru
     if ! jq empty "$temp_path" > /dev/null 2>&1; then
