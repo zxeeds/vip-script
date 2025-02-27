@@ -105,19 +105,19 @@ generate_vmess_config() {
     if [[ -z "$uuid" ]] || [[ -z "$username" ]]; then
         echo "Error: UUID dan username diperlukan" >&2
         return 1
-    }
+    fi
 
     # Pastikan file konfigurasi ada dan tidak kosong
     if [[ ! -s "$config_path" ]]; then
         echo "Error: File konfigurasi kosong atau tidak ada" >&2
         return 1
-    }
+    fi
 
     # Validasi JSON sebelum manipulasi
     if ! jq empty "$config_path" > /dev/null 2>&1; then
         echo "Error: Konfigurasi JSON tidak valid" >&2
         return 1
-    }
+    fi
 
     # Buat backup sebelum manipulasi
     cp "$config_path" "$backup_path"
@@ -145,7 +145,7 @@ generate_vmess_config() {
         mv "$backup_path" "$config_path"
         rm -f "$temp_path" "$temp_path.ws"
         return 1
-    }
+    fi
 
     # Perbarui konfigurasi
     mv "$temp_path" "$config_path"
