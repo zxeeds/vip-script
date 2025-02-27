@@ -257,13 +257,13 @@ validate_user_for_deletion() {
     if [[ -z "$username" ]]; then
         echo "Error: Username tidak boleh kosong" >&2
         return 1
-    }
+    fi
 
     # Validasi protokol tidak kosong
     if [[ -z "$protocol" ]]; then
         echo "Error: Protokol tidak boleh kosong" >&2
         return 1
-    }
+    fi
 
     # Validasi protokol
     case "$protocol" in
