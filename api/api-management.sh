@@ -31,66 +31,140 @@ add_user() {
     local username="$1"
     local protocol="$2"
     local validity_days="${3:-30}"
-    local quota="${4:-100}"      # Tambah parameter quota
-    local ip_limit="${5:-3}"     # Tambah parameter IP limit
+    local quota="${4:-100}"      
+    local ip_limit="${5:-3}"     
 
     # Generate UUID
     local uuid=$(uuidgen)
     local expiry_date=$(date -d "+$validity_days days" +"%Y-%m-%d")
+    local domain=$(cat /etc/xray/domain)
 
-    # Tambah user ke database
+    # Fungsi generate link untuk setiap protokol
+    generate_protocol_links() {
+        local protocol="$1"
+        local username="$2"
+        local uuid="$3"
+        local domain="$4"
+
+        case "$protocol" in
+            "vmess")
+                # TLS Link
+                local vmess_tls=$(cat <<EOF
+{
+    "v": "2",
+    "ps": "$username",
+    "add": "$domain",
+    "port": "443",
+    "id": "$uuid",
+    "aid": "0",
+    "net": "ws",
+    "path": "/vmess",
+    "type": "none",
+    "host": "$domain",
+    "tls": "tls"
+}
+EOF
+)
+                local vmess_tls_link="vmess://$(echo "$vmess_tls" | base64 -w 0)"
+
+                # Non-TLS Link
+                local vmess_non_tls=$(cat <<EOF
+{
+    "v": "2",
+    "ps": "$username",
+    "add": "$domain",
+    "port": "80",
+    "id": "$uuid",
+    "aid": "0",
+    "net": "ws",
+    "path": "/vmess",
+    "type": "none",
+    "host": "$domain",
+    "tls": "none"
+}
+EOF
+)
+                local vmess_non_tls_link="vmess://$(echo "$vmess_non_tls" | base64 -w 0)"
+
+                # gRPC Link
+                local vmess_grpc=$(cat <<EOF
+{
+    "v": "2",
+    "ps": "$username",
+    "add": "$domain",
+    "port": "443",
+    "id": "$uuid",
+    "aid": "0",
+    "net": "grpc",
+    "path": "vmess-grpc",
+    "type": "none",
+    "host": "$domain",
+    "tls": "tls"
+}
+EOF
+)
+                local vmess_grpc_link="vmess://$(echo "$vmess_grpc" | base64 -w 0)"
+
+                echo "{\"tls_link\":\"$vmess_tls_link\",\"non_tls_link\":\"$vmess_non_tls_link\",\"grpc_link\":\"$vmess_grpc_link\"}"
+                ;;
+
+            "vless")
+                # TLS Link
+                local vless_tls_link="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&type=ws#${username}"
+                
+                # Non-TLS Link
+                local vless_ntls_link="vless://${uuid}@${domain}:80?path=/vless&encryption=none&type=ws#${username}"
+                
+                # gRPC Link
+                local vless_grpc_link="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless-grpc&sni=${domain}#${username}"
+
+                echo "{\"tls_link\":\"$vless_tls_link\",\"non_tls_link\":\"$vless_ntls_link\",\"grpc_link\":\"$vless_grpc_link\"}"
+                ;;
+
+            "trojan")
+                # TLS WS Link
+                local trojan_tls_link="trojan://${uuid}@${domain}:443?path=%2Ftrojan-ws&security=tls&host=${domain}&type=ws&sni=${domain}#${username}"
+                
+                # Non-TLS WS Link
+                local trojan_ntls_link="trojan://${uuid}@${domain}:80?path=%2Ftrojan-ws&security=none&host=${domain}&type=ws#${username}"
+                
+                # gRPC Link
+                local trojan_grpc_link="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni=${domain}#${username}"
+
+                echo "{\"tls_link\":\"$trojan_tls_link\",\"non_tls_link\":\"$trojan_ntls_link\",\"grpc_link\":\"$trojan_grpc_link\"}"
+                ;;
+        esac
+    }
+
+    # Tambah user ke database dengan domain
     jq --arg username "$username" \
        --arg uuid "$uuid" \
        --arg protocol "$protocol" \
        --arg expiry "$expiry_date" \
        --arg quota "$quota" \
        --arg iplimit "$ip_limit" \
-       '.users += [{"username": $username, "uuid": $uuid, "protocol": $protocol, "expiry": $expiry, "quota": $quota, "iplimit": $iplimit}]' \
+       --arg domain "$domain" \
+       '.users += [{"username": $username, "uuid": $uuid, "protocol": $protocol, "expiry": $expiry, "quota": $quota, "iplimit": $iplimit, "domain": $domain}]' \
        "$USER_DB" > temp.json && mv temp.json "$USER_DB"
-
-    # Fungsi untuk mencatat user di database spesifik protokol
-    record_user_to_specific_db() {
-        local db_path="$1"
-        echo "### ${username} ${expiry_date} ${uuid} ${quota} ${iplimit}" >> "$db_path"
-    }
 
     # Generate konfigurasi dan catat user sesuai protokol
     case "$protocol" in
         "vmess")
             generate_vmess_config "$uuid" "$username"
-            record_user_to_specific_db "/etc/vmess/.vmess.db"
             ;;
         "vless")
             generate_vless_config "$uuid" "$username"
-            record_user_to_specific_db "/etc/vless/.vless.db"
             ;;
         "trojan")
             generate_trojan_config "$uuid" "$username"
-            record_user_to_specific_db "/etc/trojan/.trojan.db"
-            ;;
-        *)
-            echo "Protokol tidak didukung"
-            exit 1
             ;;
     esac
 
-    # Simpan limit IP
-    if [[ "$ip_limit" -gt 0 ]]; then
-        mkdir -p "/etc/kyt/limit/${protocol}/ip"
-        echo "$ip_limit" > "/etc/kyt/limit/${protocol}/ip/${username}"
-    fi
-    
-    # Simpan quota
-    if [[ "$quota" -gt 0 ]]; then
-        mkdir -p "/etc/files/${protocol}"
-        echo "$((quota * 1024 * 1024 * 1024))" > "/etc/files/${protocol}/${username}"
-    fi
+    # Generate links
+    local protocol_links=$(generate_protocol_links "$protocol" "$username" "$uuid" "$domain")
 
-    # Restart Xray
-    systemctl restart xray
-
-    # Keluarkan informasi
-    echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$ip_limit\"}"
+    # Keluarkan informasi dengan tambahan links
+    echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$ip_limit\", \"domain\": \"$domain\", \"links\": $protocol_links}"
 }
 
 # Fungsi generate konfigurasi Vmess
