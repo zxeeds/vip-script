@@ -287,6 +287,19 @@ validate_user_for_deletion() {
 
     return 0
 }
+#delete vmess config
+remove_vmess_user() {
+    local username="$1"
+    local config_path="/etc/xray/config.json"
+
+    # Hapus user dari konfigurasi Vmess WS
+    sed -i "/### $username /d" "$config_path"
+    sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+
+    # Hapus dari konfigurasi gRPC
+    sed -i "/### $username /d" "$config_path"
+    sed -i "/\"email\": \"$username\"/,/},/d" "$config_path"
+}
 
 # Fungsi hapus user
 delete_user() {
