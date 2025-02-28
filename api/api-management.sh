@@ -175,52 +175,76 @@ add_user() {
     cp "/etc/xray/config.json" "/etc/xray/config.json.bak"
 
     # Fungsi untuk menambahkan user ke Xray config dengan aman
-    add_user_to_xray_config() {
+   add_user_to_xray_config() {
         local config_path="/etc/xray/config.json"
-        local temp_config_path="/etc/xray/config.json.tmp"
         local username="$1"
         local uuid="$2"
         local protocol="$3"
         local exp=$(date -d "+3 days" +"%Y-%m-%d")
     
-        # Untuk Vmess, gunakan sed untuk menambahkan user
-        if [[ "$protocol" == "vmess" ]]; then
-            # Tambahkan user ke WS
-            sed -i "/#vmess$/a ### $username $exp\n},{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
+        # Fungsi untuk menambahkan user dengan sed
+        add_user_with_sed() {
+            local marker="$1"
+            local user_config="$2"
             
-            # Tambahkan user ke gRPC
-            sed -i "/#vmessgrpc$/a ### $username $exp\n},{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
+            # Debug: Tampilkan informasi
+            echo "Debug: Menambahkan user $username"
+            echo "Debug: Marker: $marker"
+            echo "Debug: User Config: $user_config"
+            echo "Debug: Exp Date: $exp"
+    
+            # Cek apakah marker ada
+            if ! grep -q "$marker" "$config_path"; then
+                echo "Error: Marker $marker tidak ditemukan"
+                return 1
+            fi
+    
+            # Tambahkan user ke konfigurasi
+            # Modifikasi sed untuk memastikan penambahan
+            sed -i "/$marker/a ### $username $exp\n},$user_config" "$config_path"
+            
+            # Verifikasi penambahan
+            if ! grep -q "$username" "$config_path"; then
+                echo "Gagal menambahkan user $username ke $marker"
+                return 1
+            fi
             
             return 0
-        fi
+        }
     
-        # Untuk protokol lain, gunakan jq
-        jq --arg username "$username" \
-           --arg uuid "$uuid" \
-           --arg protocol "$protocol" \
-           --arg exp "$exp" \
-           '
-           .inbounds = (.inbounds | map(
-             if .protocol == $protocol then 
-               .settings.clients += [
-                 if $protocol == "trojan" then 
-                   {"password": $uuid, "email": $username}
-                 else 
-                   {"id": $uuid, "email": $username} 
-                 end
-               ]
-             else . end
-           ))
-           ' "$config_path" > "$temp_config_path"
+        # Tentukan konfigurasi dan marker berdasarkan protokol
+        case "$protocol" in
+            "vmess")
+                # Tambahkan ke WS
+                add_user_with_sed "#vmess" "{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""}" || return 1
+                
+                # Tambahkan ke gRPC
+                add_user_with_sed "#vmessgrpc" "{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""}" || return 1
+                ;;
+            
+            "vless")
+                # Tambahkan ke WS
+                add_user_with_sed "/#vless$/" "{\""id\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
+                
+                # Tambahkan ke gRPC
+                add_user_with_sed "/#vlessgrpc$/" "{\""id\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
+                ;;
+            
+            "trojan")
+                # Tambahkan ke WS
+                add_user_with_sed "/#trojan$/" "{\""password\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
+                
+                # Tambahkan ke gRPC
+                add_user_with_sed "/#trojangrpc$/" "{\""password\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
+                ;;
+            
+            *)
+                echo "Protokol tidak valid: $protocol"
+                return 1
+                ;;
+        esac
     
-        # Validasi konfigurasi baru
-        if jq empty "$temp_config_path" > /dev/null 2>&1; then
-            mv "$temp_config_path" "$config_path"
-            return 0
-        else
-            echo "Gagal memvalidasi konfigurasi baru"
-            return 1
-        fi
+        return 0
     }
     # Tambahkan user ke konfigurasi Xray
     if ! add_user_to_xray_config "$username" "$uuid" "$protocol"; then
