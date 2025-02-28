@@ -135,13 +135,6 @@ add_user() {
         echo "{\"status\": \"error\", \"message\": \"Username tidak boleh kosong\"}"
         exit 1
     fi
-    
-    if ! add_user_to_xray_config "$username" "$uuid" "$protocol"; then
-        # Kembalikan konfigurasi asli jika gagal
-        mv "/etc/xray/config.json.bak" "/etc/xray/config.json"
-        echo "{\"status\": \"error\", \"message\": \"Gagal menambahkan user ke konfigurasi\"}"
-        exit 1
-    fi
 
     # Validasi protokol
     case "$protocol" in
@@ -193,10 +186,10 @@ add_user() {
         # Untuk Vmess, gunakan sed untuk menambahkan user
         if [[ "$protocol" == "vmess" ]]; then
             # Tambahkan user ke WS
-            sed -i "/#vmess$/a\### $username $exp\n},{\""id"\": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
+            sed -i "/#vmess$/a ### $username $exp\n},{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
             
             # Tambahkan user ke gRPC
-            sed -i "/#vmessgrpc$/a\### $username $exp\n},{\""id"\": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
+            sed -i "/#vmessgrpc$/a ### $username $exp\n},{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
             
             return 0
         fi
@@ -229,19 +222,8 @@ add_user() {
             return 1
         fi
     }
-
-        # Validasi konfigurasi baru
-        if jq empty "$temp_config_path" > /dev/null 2>&1; then
-            mv "$temp_config_path" "$config_path"
-            return 0
-        else
-            echo "Gagal memvalidasi konfigurasi baru"
-            return 1
-        fi
-    }
-
     # Tambahkan user ke konfigurasi Xray
-    if ! add_user_to_xray_config; then
+    if ! add_user_to_xray_config "$username" "$uuid" "$protocol"; then
         # Kembalikan konfigurasi asli jika gagal
         mv "/etc/xray/config.json.bak" "/etc/xray/config.json"
         echo "{\"status\": \"error\", \"message\": \"Gagal menambahkan user ke konfigurasi\"}"
