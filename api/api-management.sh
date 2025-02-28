@@ -173,87 +173,7 @@ add_user() {
 
     # Backup konfigurasi Xray
     cp "/etc/xray/config.json" "/etc/xray/config.json.bak"
-
-    # Fungsi untuk menambahkan user ke Xray config dengan aman
-   add_user_to_xray_config() {
-        local config_path="/etc/xray/config.json"
-        local username="$1"
-        local uuid="$2"
-        local protocol="$3"
-        local exp=$(date -d "+3 days" +"%Y-%m-%d")
     
-        # Fungsi untuk menambahkan user dengan sed
-        add_user_with_sed() {
-            local marker="$1"
-            local user_config="$2"
-            
-            # Debug: Tampilkan informasi
-            echo "Debug: Menambahkan user $username"
-            echo "Debug: Marker: $marker"
-            echo "Debug: User Config: $user_config"
-            echo "Debug: Exp Date: $exp"
-    
-            # Cek apakah marker ada
-            if ! grep -q "$marker" "$config_path"; then
-                echo "Error: Marker $marker tidak ditemukan"
-                return 1
-            fi
-    
-            # Tambahkan user ke konfigurasi
-            # Modifikasi sed untuk memastikan penambahan
-            sed -i "/$marker/a ### $username $exp\n},$user_config" "$config_path"
-            
-            # Verifikasi penambahan
-            if ! grep -q "$username" "$config_path"; then
-                echo "Gagal menambahkan user $username ke $marker"
-                return 1
-            fi
-            
-            return 0
-        }
-    
-        # Tentukan konfigurasi dan marker berdasarkan protokol
-        case "$protocol" in
-            "vmess")
-                # Tambahkan ke WS
-                add_user_with_sed "#vmess" "{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""}" || return 1
-                
-                # Tambahkan ke gRPC
-                add_user_with_sed "#vmessgrpc" "{\""id\"": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""}" || return 1
-                ;;
-            
-            "vless")
-                # Tambahkan ke WS
-                add_user_with_sed "/#vless$/" "{\""id\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
-                
-                # Tambahkan ke gRPC
-                add_user_with_sed "/#vlessgrpc$/" "{\""id\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
-                ;;
-            
-            "trojan")
-                # Tambahkan ke WS
-                add_user_with_sed "/#trojan$/" "{\""password\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
-                
-                # Tambahkan ke gRPC
-                add_user_with_sed "/#trojangrpc$/" "{\""password\"": \""$uuid"\",\"email\": \""$username"\""}" || return 1
-                ;;
-            
-            *)
-                echo "Protokol tidak valid: $protocol"
-                return 1
-                ;;
-        esac
-    
-        return 0
-    }
-    # Tambahkan user ke konfigurasi Xray
-    if ! add_user_to_xray_config "$username" "$uuid" "$protocol"; then
-        # Kembalikan konfigurasi asli jika gagal
-        mv "/etc/xray/config.json.bak" "/etc/xray/config.json"
-        echo "{\"status\": \"error\", \"message\": \"Gagal menambahkan user ke konfigurasi\"}"
-        exit 1
-    fi
-
     # Tambah user ke database
     jq --arg username "$username" \
        --arg uuid "$uuid" \
@@ -297,6 +217,12 @@ generate_vmess_config() {
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
 
+    # Tambahkan user ke konfigurasi Vmess WS
+    sed -i '/#vmess$/a\### '"$username $exp"'\n},{"id": "'""$uuid""'","alterId": 0,"email": "'""$username""'"' "$config_path"
+
+    # Tambahkan user ke konfigurasi Vmess gRPC
+    sed -i '/#vmessgrpc$/a\### '"$username $exp"'\n},{"id": "'""$uuid""'","alterId": 0,"email": "'""$username""'"' "$config_path"
+
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
     cat > "/var/www/html/vmess-$username.txt" <<-END
@@ -313,7 +239,7 @@ tls = true
 allowInsecure = false
 END
 
-    # Hapus entri lama dan tambahkan entri baru di database Vmess
+    # Tambahkan ke database
     if [[ -f "/etc/vmess/.vmess.db" ]]; then
         sed -i "/\b${username}\b/d" "/etc/vmess/.vmess.db"
     fi
@@ -343,6 +269,12 @@ generate_vless_config() {
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
 
+     # Tambahkan user ke konfigurasi Vmess WS
+    sed -i '/#vless$/a\### '"$username $exp"'\n},{"id": "'""$uuid""'","alterId": 0,"email": "'""$username""'"' "$config_path"
+
+    # Tambahkan user ke konfigurasi Vmess gRPC
+    sed -i '/#vlessgrpc$/a\### '"$username $exp"'\n},{"id": "'""$uuid""'","alterId": 0,"email": "'""$username""'"' "$config_path"
+    
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
     cat > "/var/www/html/vless-$username.txt" <<-END
@@ -388,6 +320,12 @@ generate_trojan_config() {
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
 
+ # Tambahkan user ke konfigurasi Vmess WS
+    sed -i '/#trojan$/a\### '"$username $exp"'\n},{"id": "'""$uuid""'","alterId": 0,"email": "'""$username""'"' "$config_path"
+
+    # Tambahkan user ke konfigurasi Vmess gRPC
+    sed -i '/#trojangrpc$/a\### '"$username $exp"'\n},{"id": "'""$uuid""'","alterId": 0,"email": "'""$username""'"' "$config_path"
+    
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
     cat > "/var/www/html/trojan-$username.txt" <<-END
