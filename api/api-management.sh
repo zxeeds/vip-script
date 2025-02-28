@@ -25,31 +25,17 @@ is_user_exists() {
         '.users[] | select(.username == $username)' \
         "$USER_DB" > /dev/null
 }
+# Fungsi generate link untuk setiap protokol
+generate_protocol_links() {
+    local protocol="$1"
+    local username="$2"
+    local uuid="$3"
+    local domain="$4"
 
-# Modifikasi fungsi add_user untuk meminta input tambahan
-add_user() {
-    local username="$1"
-    local protocol="$2"
-    local validity_days="${3:-30}"
-    local quota="${4:-100}"      
-    local ip_limit="${5:-3}"     
-
-    # Generate UUID
-    local uuid=$(uuidgen)
-    local expiry_date=$(date -d "+$validity_days days" +"%Y-%m-%d")
-    local domain=$(cat /etc/xray/domain)
-
-    # Fungsi generate link untuk setiap protokol
-    generate_protocol_links() {
-        local protocol="$1"
-        local username="$2"
-        local uuid="$3"
-        local domain="$4"
-
-        case "$protocol" in
-            "vmess")
-                # TLS Link
-                local vmess_tls=$(cat <<EOF
+    case "$protocol" in
+        "vmess")
+            # TLS Link
+            local vmess_tls=$(cat <<EOF
 {
     "v": "2",
     "ps": "$username",
@@ -65,10 +51,10 @@ add_user() {
 }
 EOF
 )
-                local vmess_tls_link="vmess://$(echo "$vmess_tls" | base64 -w 0)"
+            local vmess_tls_link="vmess://$(echo "$vmess_tls" | base64 -w 0)"
 
-                # Non-TLS Link
-                local vmess_non_tls=$(cat <<EOF
+            # Non-TLS Link
+            local vmess_non_tls=$(cat <<EOF
 {
     "v": "2",
     "ps": "$username",
@@ -84,10 +70,10 @@ EOF
 }
 EOF
 )
-                local vmess_non_tls_link="vmess://$(echo "$vmess_non_tls" | base64 -w 0)"
+            local vmess_non_tls_link="vmess://$(echo "$vmess_non_tls" | base64 -w 0)"
 
-                # gRPC Link
-                local vmess_grpc=$(cat <<EOF
+            # gRPC Link
+            local vmess_grpc=$(cat <<EOF
 {
     "v": "2",
     "ps": "$username",
@@ -103,40 +89,133 @@ EOF
 }
 EOF
 )
-                local vmess_grpc_link="vmess://$(echo "$vmess_grpc" | base64 -w 0)"
+            local vmess_grpc_link="vmess://$(echo "$vmess_grpc" | base64 -w 0)"
 
-                echo "{\"tls_link\":\"$vmess_tls_link\",\"non_tls_link\":\"$vmess_non_tls_link\",\"grpc_link\":\"$vmess_grpc_link\"}"
-                ;;
+            echo "{\"tls_link\":\"$vmess_tls_link\",\"non_tls_link\":\"$vmess_non_tls_link\",\"grpc_link\":\"$vmess_grpc_link\"}"
+            ;;
 
-            "vless")
-                # TLS Link
-                local vless_tls_link="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&type=ws#${username}"
-                
-                # Non-TLS Link
-                local vless_ntls_link="vless://${uuid}@${domain}:80?path=/vless&encryption=none&type=ws#${username}"
-                
-                # gRPC Link
-                local vless_grpc_link="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless-grpc&sni=${domain}#${username}"
+        "vless")
+            # TLS Link
+            local vless_tls_link="vless://${uuid}@${domain}:443?path=/vless&security=tls&encryption=none&type=ws#${username}"
+            
+            # Non-TLS Link
+            local vless_ntls_link="vless://${uuid}@${domain}:80?path=/vless&encryption=none&type=ws#${username}"
+            
+            # gRPC Link
+            local vless_grpc_link="vless://${uuid}@${domain}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=vless-grpc&sni=${domain}#${username}"
 
-                echo "{\"tls_link\":\"$vless_tls_link\",\"non_tls_link\":\"$vless_ntls_link\",\"grpc_link\":\"$vless_grpc_link\"}"
-                ;;
+            echo "{\"tls_link\":\"$vless_tls_link\",\"non_tls_link\":\"$vless_ntls_link\",\"grpc_link\":\"$vless_grpc_link\"}"
+            ;;
 
-            "trojan")
-                # TLS WS Link
-                local trojan_tls_link="trojan://${uuid}@${domain}:443?path=%2Ftrojan-ws&security=tls&host=${domain}&type=ws&sni=${domain}#${username}"
-                
-                # Non-TLS WS Link
-                local trojan_ntls_link="trojan://${uuid}@${domain}:80?path=%2Ftrojan-ws&security=none&host=${domain}&type=ws#${username}"
-                
-                # gRPC Link
-                local trojan_grpc_link="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni=${domain}#${username}"
+        "trojan")
+            # TLS WS Link
+            local trojan_tls_link="trojan://${uuid}@${domain}:443?path=%2Ftrojan-ws&security=tls&host=${domain}&type=ws&sni=${domain}#${username}"
+            
+            # Non-TLS WS Link
+            local trojan_ntls_link="trojan://${uuid}@${domain}:80?path=%2Ftrojan-ws&security=none&host=${domain}&type=ws#${username}"
+            
+            # gRPC Link
+            local trojan_grpc_link="trojan://${uuid}@${domain}:443?mode=gun&security=tls&type=grpc&serviceName=trojan-grpc&sni=${domain}#${username}"
 
-                echo "{\"tls_link\":\"$trojan_tls_link\",\"non_tls_link\":\"$trojan_ntls_link\",\"grpc_link\":\"$trojan_grpc_link\"}"
-                ;;
-        esac
+            echo "{\"tls_link\":\"$trojan_tls_link\",\"non_tls_link\":\"$trojan_ntls_link\",\"grpc_link\":\"$trojan_grpc_link\"}"
+            ;;
+    esac
+}
+
+# Modifikasi fungsi add_user untuk meminta input tambahan
+add_user() {
+    local username="$1"
+    local protocol="$2"
+    local validity_days="${3:-30}"
+    local quota="${4:-100}"      
+    local ip_limit="${5:-3}"     
+
+    # Validasi input
+    if [[ -z "$username" ]]; then
+        echo "{\"status\": \"error\", \"message\": \"Username tidak boleh kosong\"}"
+        exit 1
+    fi
+
+    # Validasi protokol
+    case "$protocol" in
+        "vmess"|"vless"|"trojan")
+            ;;
+        *)
+            echo "{\"status\": \"error\", \"message\": \"Protokol tidak valid\"}"
+            exit 1
+            ;;
+    esac
+
+    # Cek apakah user sudah ada di database
+    if jq -e --arg username "$username" --arg protocol "$protocol" \
+        '.users[] | select(.username == $username and .protocol == $protocol)' \
+        "$USER_DB" > /dev/null; then
+        echo "{\"status\": \"error\", \"message\": \"User sudah ada\"}"
+        exit 1
+    fi
+
+    # Cek apakah user sudah ada di konfigurasi Xray
+    if jq -e --arg username "$username" \
+        --arg protocol "$protocol" \
+        '.inbounds[] | 
+         select(.protocol == $protocol) | 
+         .settings.clients[] | 
+         select(.email == $username)' \
+        "/etc/xray/config.json" > /dev/null; then
+        echo "{\"status\": \"error\", \"message\": \"User sudah ada di konfigurasi Xray\"}"
+        exit 1
+    fi
+
+    # Generate UUID
+    local uuid=$(uuidgen)
+    local expiry_date=$(date -d "+$validity_days days" +"%Y-%m-%d")
+    local domain=$(cat /etc/xray/domain)
+
+    # Backup konfigurasi Xray
+    cp "/etc/xray/config.json" "/etc/xray/config.json.bak"
+
+    # Fungsi untuk menambahkan user ke Xray config dengan aman
+    add_user_to_xray_config() {
+        local config_path="/etc/xray/config.json"
+        local temp_config_path="/etc/xray/config.json.tmp"
+
+        # Gunakan jq untuk menambahkan user
+        jq --arg username "$username" \
+           --arg uuid "$uuid" \
+           --arg protocol "$protocol" \
+           '
+           .inbounds = (.inbounds | map(
+             if .protocol == $protocol then 
+               .settings.clients += [
+                 if $protocol == "trojan" then 
+                   {"password": $uuid, "email": $username}
+                 else 
+                   {"id": $uuid, "email": $username} 
+                 end
+               ]
+             else . end
+           ))
+           ' "$config_path" > "$temp_config_path"
+
+        # Validasi konfigurasi baru
+        if jq empty "$temp_config_path" > /dev/null 2>&1; then
+            mv "$temp_config_path" "$config_path"
+            return 0
+        else
+            echo "Gagal memvalidasi konfigurasi baru"
+            return 1
+        fi
     }
 
-    # Tambah user ke database dengan domain
+    # Tambahkan user ke konfigurasi Xray
+    if ! add_user_to_xray_config; then
+        # Kembalikan konfigurasi asli jika gagal
+        mv "/etc/xray/config.json.bak" "/etc/xray/config.json"
+        echo "{\"status\": \"error\", \"message\": \"Gagal menambahkan user ke konfigurasi\"}"
+        exit 1
+    fi
+
+    # Tambah user ke database
     jq --arg username "$username" \
        --arg uuid "$uuid" \
        --arg protocol "$protocol" \
@@ -147,26 +226,28 @@ EOF
        '.users += [{"username": $username, "uuid": $uuid, "protocol": $protocol, "expiry": $expiry, "quota": $quota, "iplimit": $iplimit, "domain": $domain}]' \
        "$USER_DB" > temp.json && mv temp.json "$USER_DB"
 
-    # Generate konfigurasi dan catat user sesuai protokol
+    # Generate konfigurasi sesuai protokol
     case "$protocol" in
         "vmess")
-            generate_vmess_config "$uuid" "$username"
+            generate_vmess_config "$uuid" "$username" "$quota" "$ip_limit"
             ;;
         "vless")
-            generate_vless_config "$uuid" "$username"
+            generate_vless_config "$uuid" "$username" "$quota" "$ip_limit"
             ;;
         "trojan")
-            generate_trojan_config "$uuid" "$username"
+            generate_trojan_config "$uuid" "$username" "$quota" "$ip_limit"
             ;;
     esac
 
     # Generate links
     local protocol_links=$(generate_protocol_links "$protocol" "$username" "$uuid" "$domain")
 
+    # Restart Xray
+    systemctl restart xray
+
     # Keluarkan informasi dengan tambahan links
     echo "{\"status\": \"success\", \"username\": \"$username\", \"uuid\": \"$uuid\", \"expiry\": \"$expiry_date\", \"quota\": \"$quota\", \"iplimit\": \"$ip_limit\", \"domain\": \"$domain\", \"links\": $protocol_links}"
 }
-
 # Fungsi generate konfigurasi Vmess
 generate_vmess_config() {
     local uuid="$1"
@@ -176,14 +257,6 @@ generate_vmess_config() {
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
-
-    # Tambahkan user ke konfigurasi Vmess WS
-    sed -i '/#vmess$/a\### '"$username $exp"'\
-},{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$username""'"' "$config_path"
-
-    # Tambahkan user ke konfigurasi Vmess gRPC
-    sed -i '/#vmessgrpc$/a\### '"$username $exp"'\
-},{"id": "'""$uuid""'","alterId": '"0"',"email": "'""$username""'"' "$config_path"
 
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
@@ -201,30 +274,26 @@ tls = true
 allowInsecure = false
 END
 
-    # Hapus entri lama jika sudah ada sebelum menambahkan
+    # Hapus entri lama dan tambahkan entri baru di database Vmess
     if [[ -f "/etc/vmess/.vmess.db" ]]; then
-        # Hapus baris dengan username yang sama
         sed -i "/\b${username}\b/d" "/etc/vmess/.vmess.db"
     fi
-    # Tambahkan entri baru
     echo "### ${username} ${exp} ${uuid} ${quota} ${ip_limit}" >> "/etc/vmess/.vmess.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/vmess
     mkdir -p /etc/kyt/limit/vmess/ip
 
-    # Atur limit IP (default 3)
-    echo "3" > /etc/kyt/limit/vmess/ip/$username
+    # Atur limit IP
+    echo "$ip_limit" > /etc/kyt/limit/vmess/ip/$username
 
-    # Atur quota (default 100 GB)
-    local quota_bytes=$((100 * 1024 * 1024 * 1024))
+    # Atur quota
+    local quota_bytes=$((quota * 1024 * 1024 * 1024))
     echo "$quota_bytes" > /etc/vmess/$username
-
-    # Restart Xray
-    systemctl restart xray
 
     return 0
 }
+
 # Fungsi generate konfigurasi Vless
 generate_vless_config() {
     local uuid="$1"
@@ -234,14 +303,6 @@ generate_vless_config() {
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
-
-    # Tambahkan user ke konfigurasi Vless WS
-    sed -i '/#vless$/a\### '"$username $exp"'\
-},{"id": "'""$uuid""'","email": "'""$username""'"' "$config_path"
-
-    # Tambahkan user ke konfigurasi Vless gRPC
-    sed -i '/#vlessgrpc$/a\### '"$username $exp"'\
-},{"id": "'""$uuid""'","email": "'""$username""'"' "$config_path"
 
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
@@ -258,27 +319,22 @@ tls = true
 allowInsecure = false
 END
 
-    # Hapus entri lama jika sudah ada sebelum menambahkan
+    # Hapus entri lama dan tambahkan entri baru di database Vless
     if [[ -f "/etc/vless/.vless.db" ]]; then
-        # Hapus baris dengan username yang sama
         sed -i "/\b${username}\b/d" "/etc/vless/.vless.db"
     fi
-    # Tambahkan entri baru
     echo "### ${username} ${exp} ${uuid} ${quota} ${ip_limit}" >> "/etc/vless/.vless.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/vless
     mkdir -p /etc/kyt/limit/vless/ip
 
-    # Atur limit IP (default 3)
-    echo "3" > /etc/kyt/limit/vless/ip/$username
+    # Atur limit IP
+    echo "$ip_limit" > /etc/kyt/limit/vless/ip/$username
 
-    # Atur quota (default 100 GB)
-    local quota_bytes=$((100 * 1024 * 1024 * 1024))
+    # Atur quota
+    local quota_bytes=$((quota * 1024 * 1024 * 1024))
     echo "$quota_bytes" > /etc/vless/$username
-
-    # Restart Xray
-    systemctl restart xray
 
     return 0
 }
@@ -292,14 +348,6 @@ generate_trojan_config() {
     local config_path="/etc/xray/config.json"
     local domain=$(cat /etc/xray/domain)
     local exp=$(date -d "+3 days" +"%Y-%m-%d")  # Default 3 hari
-
-    # Tambahkan user ke konfigurasi Trojan WS
-    sed -i '/#trojan$/a\### '"$username $exp"'\
-},{"password": "'""$uuid""'","email": "'""$username""'"' "$config_path"
-
-    # Tambahkan user ke konfigurasi Trojan gRPC
-    sed -i '/#trojangrpc$/a\### '"$username $exp"'\
-},{"password": "'""$uuid""'","email": "'""$username""'"' "$config_path"
 
     # Buat file konfigurasi klien
     mkdir -p /var/www/html
@@ -316,27 +364,22 @@ tls = true
 allowInsecure = false
 END
 
-   # Hapus entri lama jika sudah ada sebelum menambahkan
+    # Hapus entri lama dan tambahkan entri baru di database Trojan
     if [[ -f "/etc/trojan/.trojan.db" ]]; then
-        # Hapus baris dengan username yang sama
         sed -i "/\b${username}\b/d" "/etc/trojan/.trojan.db"
     fi
-    # Tambahkan entri baru
     echo "### ${username} ${exp} ${uuid} ${quota} ${ip_limit}" >> "/etc/trojan/.trojan.db"
 
     # Buat direktori jika belum ada
     mkdir -p /etc/trojan
     mkdir -p /etc/kyt/limit/trojan/ip
 
-    # Atur limit IP (default 3)
-    echo "3" > /etc/kyt/limit/trojan/ip/$username
+    # Atur limit IP
+    echo "$ip_limit" > /etc/kyt/limit/trojan/ip/$username
 
-    # Atur quota (default 100 GB)
-    local quota_bytes=$((100 * 1024 * 1024 * 1024))
+    # Atur quota
+    local quota_bytes=$((quota * 1024 * 1024 * 1024))
     echo "$quota_bytes" > /etc/trojan/$username
-
-    # Restart Xray
-    systemctl restart xray
 
     return 0
 }
