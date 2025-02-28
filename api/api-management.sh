@@ -135,6 +135,13 @@ add_user() {
         echo "{\"status\": \"error\", \"message\": \"Username tidak boleh kosong\"}"
         exit 1
     fi
+    
+    if ! add_user_to_xray_config "$username" "$uuid" "$protocol"; then
+        # Kembalikan konfigurasi asli jika gagal
+        mv "/etc/xray/config.json.bak" "/etc/xray/config.json"
+        echo "{\"status\": \"error\", \"message\": \"Gagal menambahkan user ke konfigurasi\"}"
+        exit 1
+    fi
 
     # Validasi protokol
     case "$protocol" in
@@ -178,11 +185,27 @@ add_user() {
     add_user_to_xray_config() {
         local config_path="/etc/xray/config.json"
         local temp_config_path="/etc/xray/config.json.tmp"
-
-        # Gunakan jq untuk menambahkan user
+        local username="$1"
+        local uuid="$2"
+        local protocol="$3"
+        local exp=$(date -d "+3 days" +"%Y-%m-%d")
+    
+        # Untuk Vmess, gunakan sed untuk menambahkan user
+        if [[ "$protocol" == "vmess" ]]; then
+            # Tambahkan user ke WS
+            sed -i "/#vmess$/a\### $username $exp\n},{\""id"\": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
+            
+            # Tambahkan user ke gRPC
+            sed -i "/#vmessgrpc$/a\### $username $exp\n},{\""id"\": \""$uuid"\",\"alterId\": 0,\"email\": \""$username"\""' "$config_path"
+            
+            return 0
+        fi
+    
+        # Untuk protokol lain, gunakan jq
         jq --arg username "$username" \
            --arg uuid "$uuid" \
            --arg protocol "$protocol" \
+           --arg exp "$exp" \
            '
            .inbounds = (.inbounds | map(
              if .protocol == $protocol then 
@@ -196,6 +219,16 @@ add_user() {
              else . end
            ))
            ' "$config_path" > "$temp_config_path"
+    
+        # Validasi konfigurasi baru
+        if jq empty "$temp_config_path" > /dev/null 2>&1; then
+            mv "$temp_config_path" "$config_path"
+            return 0
+        else
+            echo "Gagal memvalidasi konfigurasi baru"
+            return 1
+        fi
+    }
 
         # Validasi konfigurasi baru
         if jq empty "$temp_config_path" > /dev/null 2>&1; then
