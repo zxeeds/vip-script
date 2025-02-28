@@ -88,6 +88,14 @@ def manage_user():
                     'message': 'Username is required'
                 }), 400
             
+            # Validasi panjang username
+            if len(username) < 3 or len(username) > 20:
+                logger.error("Username length invalid")
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'Username must be 3-20 characters'
+                }), 400
+            
             # Jalankan subprocess untuk add user
             result = subprocess.run([
                 API_SCRIPT, 
@@ -98,7 +106,7 @@ def manage_user():
                 str(validity),
                 str(quota),
                 str(ip_limit)
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, timeout=30)
         
         elif action == 'delete':
             # Parameter untuk menghapus user
@@ -120,7 +128,7 @@ def manage_user():
                 action, 
                 username,
                 protocol
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, timeout=30)
         
         # Debug subprocess
         logger.debug("Subprocess STDOUT: %s", result.stdout)
@@ -130,12 +138,14 @@ def manage_user():
         # Proses hasil subprocess
         if result.returncode == 0:
             try:
+                # Coba parsing output sebagai JSON
                 output_json = json.loads(result.stdout.strip())
                 return jsonify({
                     'status': 'success', 
                     'output': output_json
                 })
             except json.JSONDecodeError as e:
+                # Jika output bukan JSON valid
                 logger.error(f"JSON Parsing Error: {e}")
                 logger.error(f"Raw output: {result.stdout}")
                 return jsonify({
@@ -151,6 +161,14 @@ def manage_user():
                 'message': result.stderr.strip()
             }), 500
     
+    except subprocess.TimeoutExpired:
+        # Tangani timeout
+        logger.error("Subprocess timeout")
+        return jsonify({
+            'status': 'error', 
+            'message': 'Operasi memakan waktu terlalu lama'
+        }), 504
+    
     except Exception as global_error:
         # Tangani exception global
         logger.error("Global Exception: %s", traceback.format_exc())
@@ -158,7 +176,6 @@ def manage_user():
             'status': 'error', 
             'message': str(global_error)
         }), 500
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8082))
     app.run(host='0.0.0.0', port=port)
