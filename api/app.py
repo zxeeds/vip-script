@@ -154,7 +154,7 @@ def manage_user():
                 subprocess_args, 
                 capture_output=True, 
                 text=True, 
-                timeout=30
+                timeout=60
             )
         
         elif action == 'delete':
