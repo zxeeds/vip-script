@@ -4,6 +4,7 @@ import json
 import os
 import logging
 import traceback
+import re
 
 # Konfigurasi logging
 logging.basicConfig(
@@ -44,21 +45,26 @@ def validate_api_key(key):
         logger.error(f"Error validating API key: {e}")
         return False
 
-def validate_username(username):
+def validate_username(username, protocol=None):
     """
-    Validasi username
+    Validasi username dengan aturan berbeda untuk setiap protokol
     """
-    if not username:
-        return False
-    
-    if len(username) < 3 or len(username) > 20:
+    # Validasi umum
+    if not username or len(username) < 3 or len(username) > 20:
         return False
     
     # Hanya huruf, angka, dan underscore
-    if not all(char.isalnum() or char == '_' for char in username):
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
         return False
     
     return True
+
+def validate_password(password):
+    """
+    Validasi password untuk protokol yang membutuhkan
+    """
+    # Minimal 8 karakter
+    return password and len(password) >= 8
 
 @app.route('/api/user', methods=['POST'])
 def manage_user():
@@ -91,78 +97,79 @@ def manage_user():
             }), 400
         
         # Tentukan action
-        action = data.get('action', 'add')
+        action = data.get('action', 'add').lower()
         
-        # Validasi action
-        if action not in ['add', 'delete']:
-            logger.error(f"Invalid action: {action}")
+        # Validasi protokol
+        protocol = data.get('protocol', 'vmess').lower()
+        if protocol not in SUPPORTED_PROTOCOLS:
+            logger.error(f"Protokol tidak didukung: {protocol}")
             return jsonify({
                 'status': 'error', 
-                'message': 'Invalid action. Gunakan "add" atau "delete"'
+                'message': f'Protokol {protocol} tidak didukung. Protokol yang didukung: {", ".join(SUPPORTED_PROTOCOLS)}'
+            }), 400
+        
+        # Validasi username
+        username = data.get('username')
+        if not validate_username(username, protocol):
+            logger.error("Username invalid")
+            return jsonify({
+                'status': 'error', 
+                'message': 'Username harus 3-20 karakter (huruf, angka, underscore)'
             }), 400
         
         # Siapkan argumen untuk subprocess
         if action == 'add':
-            # Parameter untuk menambah user
-            username = data.get('username')
-            
-            # Validasi username
-            if not validate_username(username):
-                logger.error("Username invalid")
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'Username harus 3-20 karakter (huruf, angka, underscore)'
-                }), 400
-            
-            # Validasi protokol
-            protocol = data.get('protocol', 'vmess').lower()
-            if protocol not in SUPPORTED_PROTOCOLS:
-                logger.error(f"Protokol tidak didukung: {protocol}")
-                return jsonify({
-                    'status': 'error', 
-                    'message': f'Protokol {protocol} tidak didukung. Protokol yang didukung: {", ".join(SUPPORTED_PROTOCOLS)}'
-                }), 400
-            
-            # Parameter opsional
-            validity = data.get('validity', 30)
-            quota = data.get('quota', 100)
-            ip_limit = data.get('ip_limit', 3)
+            # Parameter untuk protokol SSH berbeda
+            if protocol == 'ssh':
+                # Validasi password khusus SSH
+                password = data.get('password')
+                if not validate_password(password):
+                    logger.error("Password invalid untuk SSH")
+                    return jsonify({
+                        'status': 'error', 
+                        'message': 'Password harus minimal 8 karakter'
+                    }), 400
+                
+                # Argumen untuk SSH
+                subprocess_args = [
+                    PROTOCOL_SCRIPTS[protocol], 
+                    username, 
+                    password,
+                    str(data.get('ip_limit', 2)),  # Default 2 IP
+                    str(data.get('validity', 30)),  # Default 30 hari
+                    str(data.get('quota', 0))  # Default 0 GB
+                ]
+            else:
+                # Argumen untuk protokol Xray
+                subprocess_args = [
+                    PROTOCOL_SCRIPTS[protocol], 
+                    username, 
+                    str(data.get('quota', 100)),  # Default 100 GB
+                    str(data.get('ip_limit', 3)),  # Default 3 IP
+                    str(data.get('validity', 30))  # Default 30 hari
+                ]
             
             # Jalankan subprocess untuk add user
-            result = subprocess.run([
-                PROTOCOL_SCRIPTS[protocol], 
-                username, 
-                str(quota),
-                str(ip_limit),
-                str(validity)
-            ], capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                subprocess_args, 
+                capture_output=True, 
+                text=True, 
+                timeout=30
+            )
         
         elif action == 'delete':
-            # Parameter untuk menghapus user
-            username = data.get('username')
-            protocol = data.get('protocol', 'vmess').lower()
-            
-            # Validasi username
-            if not validate_username(username):
-                logger.error("Username invalid untuk delete")
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'Username harus 3-20 karakter (huruf, angka, underscore)'
-                }), 400
-            
-            # Validasi protokol
-            if protocol not in SUPPORTED_PROTOCOLS:
-                logger.error(f"Protokol tidak didukung: {protocol}")
-                return jsonify({
-                    'status': 'error', 
-                    'message': f'Protokol {protocol} tidak didukung. Protokol yang didukung: {", ".join(SUPPORTED_PROTOCOLS)}'
-                }), 400
-            
             # Jalankan subprocess untuk delete user
             result = subprocess.run([
                 f'/usr/local/sbin/del-{protocol}', 
                 username
             ], capture_output=True, text=True, timeout=30)
+        
+        else:
+            logger.error(f"Invalid action: {action}")
+            return jsonify({
+                'status': 'error', 
+                'message': 'Invalid action. Gunakan "add" atau "delete"'
+            }), 400
         
         # Debug subprocess
         logger.debug(f"Subprocess STDOUT: {result.stdout}")
