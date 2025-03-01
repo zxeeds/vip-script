@@ -6,17 +6,20 @@ import logging
 import traceback
 
 # Konfigurasi logging
-logging.basicConfig(level=logging.DEBUG, 
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler('/var/log/vpn-api/debug.log'),
-                        logging.StreamHandler()
-                    ])
+logging.basicConfig(
+    level=logging.DEBUG, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/var/log/vpn-api/debug.log'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Path konfigurasi
 CONFIG_PATH = '/etc/vpn-api/config.json'
-API_SCRIPT = '/etc/vpn-api/api-management.sh'
 
 def validate_api_key(key):
     """
@@ -34,12 +37,12 @@ def validate_api_key(key):
 def manage_user():
     try:
         # Logging headers dan raw data
-        logger.debug("Request Headers: %s", dict(request.headers))
-        logger.debug("Raw Request Data: %s", request.get_data(as_text=True))
+        logger.debug(f"Request Headers: {dict(request.headers)}")
+        logger.debug(f"Raw Request Data: {request.get_data(as_text=True)}")
         
         # Ambil API Key dari header
         api_key = request.headers.get('Authorization')
-        logger.debug("API Key: %s", api_key)
+        logger.debug(f"API Key: {api_key}")
         
         # Validasi API Key
         if not validate_api_key(api_key):
@@ -52,26 +55,18 @@ def manage_user():
         # Parse JSON
         try:
             data = request.get_json(force=True)
-            logger.debug("Parsed JSON Data: %s", data)
+            logger.debug(f"Parsed JSON Data: {data}")
         except Exception as json_error:
-            logger.error("JSON Parsing Error: %s", json_error)
+            logger.error(f"JSON Parsing Error: {json_error}")
             return jsonify({
                 'status': 'error', 
                 'message': 'Invalid JSON data'
             }), 400
         
-        # Ekstrak action
-        action = data.get('action')
+        # Tentukan action
+        action = data.get('action', 'add')
         
-        # Validasi action
-        if action not in ['add', 'delete']:
-            logger.error("Invalid action: %s", action)
-            return jsonify({
-                'status': 'error', 
-                'message': 'Invalid action'
-            }), 400
-        
-        # Persiapkan argumen untuk subprocess
+        # Siapkan argumen untuk subprocess
         if action == 'add':
             # Parameter untuk menambah user
             username = data.get('username')
@@ -98,42 +93,44 @@ def manage_user():
             
             # Jalankan subprocess untuk add user
             result = subprocess.run([
-                API_SCRIPT, 
-                api_key,
-                action, 
+                '/usr/local/sbin/add-vme', 
                 username, 
-                protocol, 
-                str(validity),
                 str(quota),
-                str(ip_limit)
+                str(ip_limit),
+                str(validity)
             ], capture_output=True, text=True, timeout=30)
         
         elif action == 'delete':
             # Parameter untuk menghapus user
             username = data.get('username')
-            protocol = data.get('protocol')
+            protocol = data.get('protocol', 'vmess')
             
-            # Validasi username dan protokol
-            if not username or not protocol:
-                logger.error("Username and protocol are required for deletion")
+            # Validasi username
+            if not username:
+                logger.error("Username is required for deletion")
                 return jsonify({
                     'status': 'error', 
-                    'message': 'Username and protocol are required'
+                    'message': 'Username is required'
                 }), 400
             
             # Jalankan subprocess untuk delete user
             result = subprocess.run([
-                API_SCRIPT, 
-                api_key,
-                action, 
+                '/usr/local/sbin/del-vme', 
                 username,
                 protocol
             ], capture_output=True, text=True, timeout=30)
         
+        else:
+            logger.error(f"Invalid action: {action}")
+            return jsonify({
+                'status': 'error', 
+                'message': 'Invalid action'
+            }), 400
+        
         # Debug subprocess
-        logger.debug("Subprocess STDOUT: %s", result.stdout)
-        logger.debug("Subprocess STDERR: %s", result.stderr)
-        logger.debug("Return Code: %s", result.returncode)
+        logger.debug(f"Subprocess STDOUT: {result.stdout}")
+        logger.debug(f"Subprocess STDERR: {result.stderr}")
+        logger.debug(f"Return Code: {result.returncode}")
         
         # Proses hasil subprocess
         if result.returncode == 0:
@@ -144,18 +141,19 @@ def manage_user():
                     'status': 'success', 
                     'output': output_json
                 })
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError:
                 # Jika output bukan JSON valid
-                logger.error(f"JSON Parsing Error: {e}")
-                logger.error(f"Raw output: {result.stdout}")
+                logger.error(f"Output tidak dapat di-parse: {result.stdout}")
                 return jsonify({
-                    'status': 'error', 
-                    'message': 'Gagal memproses output',
-                    'raw_output': result.stdout
-                }), 500
+                    'status': 'success', 
+                    'output': {
+                        'message': 'User berhasil diproses',
+                        'raw_output': result.stdout
+                    }
+                })
         else:
             # Subprocess gagal
-            logger.error("Subprocess Error: %s", result.stderr)
+            logger.error(f"Subprocess Error: {result.stderr}")
             return jsonify({
                 'status': 'error', 
                 'message': result.stderr.strip()
@@ -171,11 +169,12 @@ def manage_user():
     
     except Exception as global_error:
         # Tangani exception global
-        logger.error("Global Exception: %s", traceback.format_exc())
+        logger.error(f"Global Exception: {traceback.format_exc()}")
         return jsonify({
             'status': 'error', 
             'message': str(global_error)
         }), 500
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8082))
-    app.run(host='0.0.0.0', port=port)
+    # Pastikan bind ke semua interface
+    app.run(host='0.0.0.0', port=8082, debug=True)
