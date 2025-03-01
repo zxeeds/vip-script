@@ -21,6 +21,17 @@ app = Flask(__name__)
 # Path konfigurasi
 CONFIG_PATH = '/etc/vpn-api/config.json'
 
+# Protokol yang didukung
+SUPPORTED_PROTOCOLS = ['vmess', 'vless', 'trojan', 'ssh']
+
+# Mapping protokol ke script
+PROTOCOL_SCRIPTS = {
+    'vmess': '/usr/local/sbin/add-vme',
+    'vless': '/usr/local/sbin/add-vle',
+    'trojan': '/usr/local/sbin/add-tro',
+    'ssh': '/usr/local/sbin/add-ssh'
+}
+
 def validate_api_key(key):
     """
     Validasi API key dari file konfigurasi
@@ -32,6 +43,22 @@ def validate_api_key(key):
     except Exception as e:
         logger.error(f"Error validating API key: {e}")
         return False
+
+def validate_username(username):
+    """
+    Validasi username
+    """
+    if not username:
+        return False
+    
+    if len(username) < 3 or len(username) > 20:
+        return False
+    
+    # Hanya huruf, angka, dan underscore
+    if not all(char.isalnum() or char == '_' for char in username):
+        return False
+    
+    return True
 
 @app.route('/api/user', methods=['POST'])
 def manage_user():
@@ -66,34 +93,44 @@ def manage_user():
         # Tentukan action
         action = data.get('action', 'add')
         
+        # Validasi action
+        if action not in ['add', 'delete']:
+            logger.error(f"Invalid action: {action}")
+            return jsonify({
+                'status': 'error', 
+                'message': 'Invalid action. Gunakan "add" atau "delete"'
+            }), 400
+        
         # Siapkan argumen untuk subprocess
         if action == 'add':
             # Parameter untuk menambah user
             username = data.get('username')
-            protocol = data.get('protocol', 'vmess')
+            
+            # Validasi username
+            if not validate_username(username):
+                logger.error("Username invalid")
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'Username harus 3-20 karakter (huruf, angka, underscore)'
+                }), 400
+            
+            # Validasi protokol
+            protocol = data.get('protocol', 'vmess').lower()
+            if protocol not in SUPPORTED_PROTOCOLS:
+                logger.error(f"Protokol tidak didukung: {protocol}")
+                return jsonify({
+                    'status': 'error', 
+                    'message': f'Protokol {protocol} tidak didukung. Protokol yang didukung: {", ".join(SUPPORTED_PROTOCOLS)}'
+                }), 400
+            
+            # Parameter opsional
             validity = data.get('validity', 30)
             quota = data.get('quota', 100)
             ip_limit = data.get('ip_limit', 3)
             
-            # Validasi username
-            if not username:
-                logger.error("Username is required")
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'Username is required'
-                }), 400
-            
-            # Validasi panjang username
-            if len(username) < 3 or len(username) > 20:
-                logger.error("Username length invalid")
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'Username must be 3-20 characters'
-                }), 400
-            
             # Jalankan subprocess untuk add user
             result = subprocess.run([
-                '/usr/local/sbin/add-vme', 
+                PROTOCOL_SCRIPTS[protocol], 
                 username, 
                 str(quota),
                 str(ip_limit),
@@ -103,29 +140,29 @@ def manage_user():
         elif action == 'delete':
             # Parameter untuk menghapus user
             username = data.get('username')
-            protocol = data.get('protocol', 'vmess')
+            protocol = data.get('protocol', 'vmess').lower()
             
             # Validasi username
-            if not username:
-                logger.error("Username is required for deletion")
+            if not validate_username(username):
+                logger.error("Username invalid untuk delete")
                 return jsonify({
                     'status': 'error', 
-                    'message': 'Username is required'
+                    'message': 'Username harus 3-20 karakter (huruf, angka, underscore)'
+                }), 400
+            
+            # Validasi protokol
+            if protocol not in SUPPORTED_PROTOCOLS:
+                logger.error(f"Protokol tidak didukung: {protocol}")
+                return jsonify({
+                    'status': 'error', 
+                    'message': f'Protokol {protocol} tidak didukung. Protokol yang didukung: {", ".join(SUPPORTED_PROTOCOLS)}'
                 }), 400
             
             # Jalankan subprocess untuk delete user
             result = subprocess.run([
-                '/usr/local/sbin/del-vme', 
-                username,
-                protocol
+                f'/usr/local/sbin/del-{protocol}', 
+                username
             ], capture_output=True, text=True, timeout=30)
-        
-        else:
-            logger.error(f"Invalid action: {action}")
-            return jsonify({
-                'status': 'error', 
-                'message': 'Invalid action'
-            }), 400
         
         # Debug subprocess
         logger.debug(f"Subprocess STDOUT: {result.stdout}")
@@ -174,6 +211,16 @@ def manage_user():
             'status': 'error', 
             'message': str(global_error)
         }), 500
+
+@app.route('/api/protocols', methods=['GET'])
+def list_protocols():
+    """
+    Endpoint untuk menampilkan protokol yang didukung
+    """
+    return jsonify({
+        'status': 'success',
+        'protocols': SUPPORTED_PROTOCOLS
+    })
 
 if __name__ == '__main__':
     # Pastikan bind ke semua interface
