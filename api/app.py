@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from flask import Flask, request, jsonify
 import subprocess
 import json
@@ -5,42 +6,114 @@ import os
 import logging
 import traceback
 import re
+from logging.handlers import RotatingFileHandler
 
-# Konfigurasi logging
-logging.basicConfig(
-    level=logging.DEBUG, 
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/var/log/vpn-api/debug.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# Konfigurasi logging dengan rotasi file
+def setup_logging():
+    log_dir = '/var/log/vpn-api'
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'debug.log')
+    
+    # Siapkan handler dengan rotasi
+    file_handler = RotatingFileHandler(
+        log_path, 
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5
+    )
+    
+    # Konfigurasi format log
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Setup logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+    
+    # Tambahkan handler console untuk development
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    return logger
 
-app = Flask(__name__)
+# Inisialisasi logger
+logger = setup_logging()
 
 # Path konfigurasi
 CONFIG_PATH = '/etc/vpn-api/config.json'
 
+# Baca konfigurasi
+def load_config():
+    try:
+        # Tambahkan print untuk debugging
+        print(f"Mencoba membaca konfigurasi dari {CONFIG_PATH}")
+        
+        with open(CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        
+        print("Konfigurasi berhasil dibaca")
+        
+        # Validasi struktur konfigurasi
+        required_keys = ['api_key', 'allowed_ips', 'protocols_allowed']
+        for key in required_keys:
+            if key not in config:
+                print(f"Missing key: {key}")
+                raise ValueError(f"Konfigurasi missing key: {key}")
+        
+        return config
+    except Exception as e:
+        # Tambahkan print untuk debugging
+        print(f"Error membaca konfigurasi: {e}")
+        logger.error(f"Error membaca konfigurasi: {e}")
+        return {}
+
+# Load konfigurasi global
+CONFIG = load_config()
+
 # Protokol yang didukung
-SUPPORTED_PROTOCOLS = ['vmess', 'vless', 'trojan', 'ssh']
+SUPPORTED_PROTOCOLS = CONFIG.get('protocols_allowed', ['vmess', 'vless', 'trojan', 'ssh'])
 
 # Mapping protokol ke script
 PROTOCOL_SCRIPTS = {
-    'vmess': '/usr/local/sbin/add-vme',
-    'vless': '/usr/local/sbin/add-vle',
-    'trojan': '/usr/local/sbin/add-tro',
-    'ssh': '/usr/local/sbin/add-ssh'
+    'vmess': {
+        'add': '/usr/local/sbin/add-vme',
+        'delete': '/usr/local/sbin/del-vme'
+    },
+    'vless': {
+        'add': '/usr/local/sbin/add-vle', 
+        'delete': '/usr/local/sbin/del-vle'
+    },
+    'trojan': {
+        'add': '/usr/local/sbin/add-tro',
+        'delete': '/usr/local/sbin/del-tro'
+    },
+    'ssh': {
+        'add': '/usr/local/sbin/add-ssh',
+        'delete': '/usr/local/sbin/del-ssh'
+    }
 }
+
+def validate_ip(ip):
+    """
+    Validasi IP yang diizinkan
+    """
+    # Tambahkan dukungan localhost dan IP yang valid
+    if ip in ['127.0.0.1', 'localhost']:
+        return True
+    
+    allowed_ips = CONFIG.get('allowed_ips', [])
+    return ip in allowed_ips
 
 def validate_api_key(key):
     """
     Validasi API key dari file konfigurasi
     """
     try:
-        with open(CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-        return key == config.get('api_key')
+        config_key = CONFIG.get('api_key')
+        return key == config_key
     except Exception as e:
         logger.error(f"Error validating API key: {e}")
         return False
@@ -66,16 +139,29 @@ def validate_password(password):
     # Minimal 8 karakter
     return password and len(password) >= 8
 
+# Inisialisasi Flask app
+app = Flask(__name__)
+
 @app.route('/api/user', methods=['POST'])
 def manage_user():
     try:
+        # Validasi IP
+        client_ip = request.remote_addr
+        if not validate_ip(client_ip):
+            logger.warning(f"Percobaan akses dari IP tidak diizinkan: {client_ip}")
+            return jsonify({
+                'status': 'error', 
+                'message': 'IP tidak diizinkan'
+            }), 403
+        
         # Logging headers dan raw data
+        logger.debug(f"Request dari IP: {client_ip}")
         logger.debug(f"Request Headers: {dict(request.headers)}")
         logger.debug(f"Raw Request Data: {request.get_data(as_text=True)}")
         
         # Ambil API Key dari header
         api_key = request.headers.get('Authorization')
-        logger.debug(f"API Key: {api_key}")
+        logger.debug(f"API Key yang diterima: {api_key}")
         
         # Validasi API Key
         if not validate_api_key(api_key):
@@ -117,6 +203,14 @@ def manage_user():
                 'message': 'Username harus 3-20 karakter (huruf, angka, underscore)'
             }), 400
         
+        # Tentukan script berdasarkan action dan protokol
+        if action not in ['add', 'delete']:
+            logger.error(f"Invalid action: {action}")
+            return jsonify({
+                'status': 'error', 
+                'message': 'Aksi hanya bisa "add" atau "delete"'
+            }), 400
+        
         # Siapkan argumen untuk subprocess
         if action == 'add':
             # Parameter untuk protokol SSH berbeda
@@ -132,7 +226,7 @@ def manage_user():
                 
                 # Argumen untuk SSH
                 subprocess_args = [
-                    PROTOCOL_SCRIPTS[protocol], 
+                    PROTOCOL_SCRIPTS[protocol]['add'], 
                     username, 
                     password,
                     str(data.get('ip_limit', 2)),  # Default 2 IP
@@ -142,34 +236,28 @@ def manage_user():
             else:
                 # Argumen untuk protokol Xray
                 subprocess_args = [
-                    PROTOCOL_SCRIPTS[protocol], 
+                    PROTOCOL_SCRIPTS[protocol]['add'], 
                     username, 
                     str(data.get('quota', 100)),  # Default 100 GB
                     str(data.get('ip_limit', 3)),  # Default 3 IP
                     str(data.get('validity', 30))  # Default 30 hari
                 ]
-            
-            # Jalankan subprocess untuk add user
-            result = subprocess.run(
-                subprocess_args, 
-                capture_output=True, 
-                text=True, 
-                timeout=60
-            )
         
         elif action == 'delete':
-            # Jalankan subprocess untuk delete user
-            result = subprocess.run([
-                f'/usr/local/sbin/del-{protocol}', 
-                username
-            ], capture_output=True, text=True, timeout=30)
+            # Argumen untuk delete
+            subprocess_args = [
+                PROTOCOL_SCRIPTS[protocol]['delete'], 
+                username,
+                "api_mode"  # Flag mode API
+            ]
         
-        else:
-            logger.error(f"Invalid action: {action}")
-            return jsonify({
-                'status': 'error', 
-                'message': 'Invalid action. Gunakan "add" atau "delete"'
-            }), 400
+        # Jalankan subprocess
+        result = subprocess.run(
+            subprocess_args, 
+            capture_output=True, 
+            text=True, 
+            timeout=60
+        )
         
         # Debug subprocess
         logger.debug(f"Subprocess STDOUT: {result.stdout}")
@@ -231,4 +319,4 @@ def list_protocols():
 
 if __name__ == '__main__':
     # Pastikan bind ke semua interface
-    app.run(host='0.0.0.0', port=8082, debug=True)
+    app.run(host='0.0.0.0', port=8082, debug=False)
