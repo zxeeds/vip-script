@@ -1,8 +1,12 @@
 {
-    "api_key": "generate_a_strong_random_key_here",
+    "api_key": "T5mJGsYw49AZSaToZ0LuU595K1lFa9b0RgIFA3Px6gZDxIn1HZFkWqzGnUK7e6JK",
     "allowed_ips": [
-        "ip_web_server",
-        "127.0.0.1"
+        "143.198.200.221",
+        "188.166.212.255",
+        "103.59.160.153",
+        "127.0.0.1",
+        "128.199.116.60",
+        "localhost"
     ],
     "max_users": 100,
     "log_path": "/var/log/vpn-api.log",
@@ -10,7 +14,8 @@
     "protocols_allowed": [
         "vmess",
         "vless", 
-        "trojan"
+        "trojan",
+        "ssh"
     ],
     "default_user_validity_days": 30
 }
