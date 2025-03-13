@@ -59,9 +59,9 @@ Description=VPN API Service
 After=network.target
 
 [Service]
-Type=simple
-WorkingDirectory=$API_DIR
-ExecStart=/usr/bin/python3 $API_DIR/app.py
+WorkingDirectory=/etc/vpn-api
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/local/bin/gunicorn --bind 0.0.0.0:8082 --log-level=debug --capture-output --enable-stdio-inheritance app:app
 Restart=on-failure
 
 [Install]
