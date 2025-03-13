@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Konfigurasi Dasar
 API_DIR="/etc/vpn-api"
 SERVICE_FILE="/etc/systemd/system/vpn-api.service"
@@ -18,9 +17,38 @@ fi
 # Instalasi Dependensi
 install_dependencies() {
     log_install "Menginstall dependensi Python"
+    
+    # Update paket
     apt update
-    apt install -y python3 python3-pip jq uuid-runtime
-    pip3 install flask
+    
+    # Instalasi dependensi sistem
+    apt install -y \
+        python3 \
+        python3-pip \
+        python3-venv \
+        jq \
+        uuid-runtime \
+        curl \
+        wget
+    
+    # Buat virtual environment
+    python3 -m venv /opt/vpn-api-env
+    
+    # Aktifkan virtual environment
+    source /opt/vpn-api-env/bin/activate
+    
+    # Instalasi pip
+    pip install --upgrade pip
+    
+    # Instalasi dependensi Python
+    pip install \
+        flask \
+        gunicorn \
+        requests \
+        python-dotenv
+    
+    # Kembalikan ke shell normal
+    deactivate
 }
 
 # Persiapan Direktori
@@ -30,7 +58,8 @@ prepare_directory() {
     
     # Buat users.json jika belum ada
     if [[ ! -f "$API_DIR/users.json" ]]; then
-        echo '{"users":[]}' > "$API_DIR/users.json"
+        echo '[]' > "$API_DIR/users.json"
+        chmod 644 "$API_DIR/users.json"
     fi
 }
 
@@ -41,13 +70,12 @@ configure_files() {
     # Download app.py
     wget -O "$API_DIR/app.py" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/app.py"
     
-    # Download api-management.sh
-    wget -O "$API_DIR/api-management.sh" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/api-management.sh"
-    chmod +x "$API_DIR/api-management.sh"
-    
     # Download config.json
     wget -O "$API_DIR/config.json" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/config.json"
-    chmod 644 "$API_DIR/config.json"
+    
+    # Set permissions
+    chmod 644 "$API_DIR/app.py"
+    chmod 600 "$API_DIR/config.json"
 }
 
 # Buat Systemd Service
@@ -57,12 +85,27 @@ create_systemd_service() {
 [Unit]
 Description=VPN API Service
 After=network.target
+Wants=network-online.target
 
 [Service]
-WorkingDirectory=/etc/vpn-api
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/local/bin/gunicorn --bind 0.0.0.0:8082 --log-level=debug --capture-output --enable-stdio-inheritance app:app
-Restart=on-failure
+Type=simple
+User=root
+Group=root
+WorkingDirectory=$API_DIR
+Environment=PATH=/opt/vpn-api-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=$API_DIR
+ExecStart=/opt/vpn-api-env/bin/gunicorn \
+    --bind 0.0.0.0:8082 \
+    --workers 2 \
+    --threads 4 \
+    --log-level=debug \
+    --log-file=$API_DIR/logs/gunicorn.log \
+    --capture-output \
+    --enable-stdio-inheritance \
+    app:app
+
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -72,8 +115,17 @@ EOL
 # Konfigurasi Firewall
 configure_firewall() {
     log_install "Mengkonfigurasi Firewall"
+    
+    # UFW
     if command -v ufw &> /dev/null; then
-        ufw allow 8080/tcp
+        ufw allow 8082/tcp
+        ufw reload
+    fi
+    
+    # Firewalld
+    if command -v firewall-cmd &> /dev/null; then
+        firewall-cmd --permanent --add-port=8082/tcp
+        firewall-cmd --reload
     fi
 }
 
@@ -93,7 +145,9 @@ main() {
     create_systemd_service
     configure_firewall
     enable_service
+    
     log_install "Instalasi API VPN Selesai"
+    log_install "API berjalan di port 8082"
 }
 
 # Jalankan
