@@ -11,5 +11,5 @@
 3. Konfigurasi port di `config.json`
 
 ## Troubleshooting
-- Pastikan port 8081 tersedia
+- Pastikan port 8082 tersedia
 - Periksa log systemd untuk error
