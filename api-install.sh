@@ -67,15 +67,27 @@ prepare_directory() {
 configure_files() {
     log_install "Mengatur konfigurasi file"
     
+    # Generate API key
+    API_KEY=$(openssl rand -hex 32)
+    
     # Download app.py
     wget -O "$API_DIR/app.py" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/app.py"
     
-    # Download config.json
+    # Download config.json template
     wget -O "$API_DIR/config.json" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/config.json"
+    
+    # Modifikasi config.json dengan API key baru menggunakan sed
+    sed -i "s/\"api_key\": \"[^\"]*\"/\"api_key\": \"$API_KEY\"/g" "$API_DIR/config.json"
     
     # Set permissions
     chmod 644 "$API_DIR/app.py"
     chmod 600 "$API_DIR/config.json"
+    
+    # Catat API key (opsional, untuk referensi)
+    echo "Generated API Key: $API_KEY" > "$API_DIR/api_key.txt"
+    chmod 600 "$API_DIR/api_key.txt"
+    
+    log_install "API Key berhasil digenerate"
 }
 
 # Buat Systemd Service
@@ -148,6 +160,11 @@ main() {
     
     log_install "Instalasi API VPN Selesai"
     log_install "API berjalan di port 8082"
+
+    # Tampilkan API key
+    echo "API Key tersimpan di: $API_DIR/api_key.txt"
+    cat "$API_DIR/api_key.txt"
+
 }
 
 # Jalankan
