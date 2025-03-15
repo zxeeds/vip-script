@@ -227,12 +227,17 @@ def manage_user():
                 # Argumen untuk SSH
                 subprocess_args = [
                     PROTOCOL_SCRIPTS[protocol]['add'], 
+                    'api',  # Tambahkan flag mode API
                     username, 
                     password,
                     str(data.get('ip_limit', 2)),  # Default 2 IP
                     str(data.get('validity', 30)),  # Default 30 hari
                     str(data.get('quota', 0))  # Default 0 GB
                 ]
+                
+                # Logging subprocess arguments
+                logger.debug(f"Subprocess Arguments: {subprocess_args}")
+                logger.debug(f"Executing: {' '.join(subprocess_args)}")
             else:
                 # Argumen untuk protokol Xray
                 subprocess_args = [
@@ -250,13 +255,18 @@ def manage_user():
                 username,
                 "api_mode"  # Flag mode API
             ]
-        
         # Jalankan subprocess
         result = subprocess.run(
             subprocess_args, 
             capture_output=True, 
             text=True, 
-            timeout=60
+            timeout=30,
+            env={
+                **os.environ,  # Pertahankan environment existing
+                'TERM': 'xterm',  # Tambahkan TERM environment
+                'HOME': os.path.expanduser('~'),  # Pastikan HOME ter-set
+                'PATH': os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin')
+            }
         )
         
         # Debug subprocess
