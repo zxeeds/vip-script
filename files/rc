@@ -1,5 +1,5 @@
-REPO="https://raw.githubusercontent.com/valkry7/wiz4rd/MONSTER/"
+REPO="https://raw.githubusercontent.com/zxeeds/sannpro/main/"
 
 
 
-wget -O /root/.config/rclone/rclone.conf "${REPO}cfg_conf_js/rclone.conf"
+wget -O /root/.config/rclone/rclone.conf "${REPO}ghsjxbkj/rclone.conf"
