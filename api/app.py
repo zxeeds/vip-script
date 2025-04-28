@@ -227,12 +227,12 @@ def manage_user():
                 # Argumen untuk SSH
                 subprocess_args = [
                     PROTOCOL_SCRIPTS[protocol]['add'], 
-                    'api',  # Tambahkan flag mode API
-                    username, 
-                    password,
-                    str(data.get('ip_limit', 2)),  # Default 2 IP
-                    str(data.get('validity', 30)),  # Default 30 hari
-                    str(data.get('quota', 0))  # Default 0 GB
+                    'api',
+                    '--username', username,
+                    '--password', data.get('password'),
+                    '--limit', str(data.get('ip_limit', 2)),
+                    '--duration', str(data.get('validity', 30)),
+                    '--quota', str(data.get('quota', 0))
                 ]
                 
                 # Logging subprocess arguments
