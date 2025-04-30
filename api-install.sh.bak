@@ -2,7 +2,6 @@
 # Konfigurasi Dasar
 API_DIR="/etc/vpn-api"
 SERVICE_FILE="/etc/systemd/system/vpn-api.service"
-APP_DIR="$API_DIR/api"  # Direktori untuk aplikasi modular
 
 # Fungsi Log
 log_install() {
@@ -55,61 +54,36 @@ install_dependencies() {
 # Persiapan Direktori
 prepare_directory() {
     log_install "Menyiapkan direktori API"
-    mkdir -p "$APP_DIR"  # Buat direktori api
     mkdir -p "$API_DIR/logs"
     
-    # Buat struktur folder modular
-    mkdir -p "$APP_DIR/config"
-    mkdir -p "$APP_DIR/utils"
-    mkdir -p "$APP_DIR/services"
-    mkdir -p "$APP_DIR/routes"
-    
-    # Buat __init__.py untuk setiap folder
-    touch "$APP_DIR/config/__init__.py"
-    touch "$APP_DIR/utils/__init__.py"
-    touch "$APP_DIR/services/__init__.py"
-    touch "$APP_DIR/routes/__init__.py"
+    # Buat users.json jika belum ada
+    if [[ ! -f "$API_DIR/users.json" ]]; then
+        echo '[]' > "$API_DIR/users.json"
+        chmod 644 "$API_DIR/users.json"
+    fi
 }
 
-# Download File Modular
-download_modular_files() {
-    log_install "Mengunduh file modular API"
-    
-    # Base URL GitHub
-    BASE_URL="https://raw.githubusercontent.com/zxeeds/vip-script/main/api"
-    
-    # File utama
-    wget -O "$APP_DIR/app.py" "$BASE_URL/app.py"
-    
-    # Config
-    wget -O "$APP_DIR/config/config_manager.py" "$BASE_URL/config/config_manager.py"
-    
-    # Utils
-    wget -O "$APP_DIR/utils/logger.py" "$BASE_URL/utils/logger.py"
-    wget -O "$APP_DIR/utils/validators.py" "$BASE_URL/utils/validators.py"
-    wget -O "$APP_DIR/utils/subprocess_utils.py" "$BASE_URL/utils/subprocess_utils.py"
-    
-    # Services
-    wget -O "$APP_DIR/services/user_service.py" "$BASE_URL/services/user_service.py"
-    
-    # Routes
-    wget -O "$APP_DIR/routes/user_routes.py" "$BASE_URL/routes/user_routes.py"
-    wget -O "$APP_DIR/routes/health_routes.py" "$BASE_URL/routes/health_routes.py"
+# Konfigurasi File
+configure_files() {
+    log_install "Mengatur konfigurasi file"
     
     # Generate API key
     API_KEY=$(openssl rand -hex 32)
     
-    # Download config.json template
-    wget -O "$API_DIR/config.json" "$BASE_URL/config.json"
+    # Download app.py
+    wget -O "$API_DIR/app.py" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/app.py"
     
-    # Modifikasi config.json dengan API key baru
+    # Download config.json template
+    wget -O "$API_DIR/config.json" "https://raw.githubusercontent.com/zxeeds/vip-script/main/api/config.json"
+    
+    # Modifikasi config.json dengan API key baru menggunakan sed
     sed -i "s/\"api_key\": \"[^\"]*\"/\"api_key\": \"$API_KEY\"/g" "$API_DIR/config.json"
     
     # Set permissions
-    chmod 644 "$APP_DIR/app.py"
+    chmod 644 "$API_DIR/app.py"
     chmod 600 "$API_DIR/config.json"
     
-    # Catat API key
+    # Catat API key (opsional, untuk referensi)
     echo "Generated API Key: $API_KEY" > "$API_DIR/api_key.txt"
     chmod 600 "$API_DIR/api_key.txt"
     
@@ -129,9 +103,9 @@ Wants=network-online.target
 Type=simple
 User=root
 Group=root
-WorkingDirectory=$APP_DIR
+WorkingDirectory=$API_DIR
 Environment=PATH=/opt/vpn-api-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=$APP_DIR
+Environment=PYTHONPATH=$API_DIR
 ExecStart=/opt/vpn-api-env/bin/gunicorn \
     --bind 0.0.0.0:8082 \
     --workers 2 \
@@ -179,18 +153,18 @@ enable_service() {
 main() {
     install_dependencies
     prepare_directory
-    download_modular_files
+    configure_files
     create_systemd_service
     configure_firewall
     enable_service
     
     log_install "Instalasi API VPN Selesai"
     log_install "API berjalan di port 8082"
-    log_install "Struktur modular terinstall di: $APP_DIR"
 
     # Tampilkan API key
     echo "API Key tersimpan di: $API_DIR/api_key.txt"
     cat "$API_DIR/api_key.txt"
+
 }
 
 # Jalankan
