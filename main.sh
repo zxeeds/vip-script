@@ -623,21 +623,41 @@ wget ${REPO}files/bbr.sh &&  chmod +x bbr.sh && ./bbr.sh
 print_success "Swap 2 G"
 }
 function ins_Fail2ban(){
-clear
-print_install "Menginstall Fail2ban"
-if [ -d '/usr/local/ddos' ]; then
-echo; echo; echo "Please un-install the previous version first"
-exit 0
-else
-mkdir /usr/local/ddos
-fi
-clear
-echo "Banner /etc/banner.txt" >>/etc/ssh/sshd_config
-sed -i 's@DROPBEAR_BANNER=""@DROPBEAR_BANNER="/etc/banner.txt"@g' /etc/default/dropbear
-wget -O /etc/kyt.txt "${REPO}banner/issue.net"
-wget -O /etc/banner.txt "${REPO}banner/issue.net"
-print_success "Fail2ban"
+    clear
+    print_install "Menginstall Fail2ban"
+    # Instal fail2ban
+    apt update
+    apt install fail2ban -y
+    
+    if [ -d '/usr/local/ddos' ]; then
+        echo; echo; echo "Please un-install the previous version first"
+        exit 0
+    else
+        mkdir /usr/local/ddos
+    fi
+    clear
+    echo "Banner /etc/banner.txt" >>/etc/ssh/sshd_config
+    sed -i 's@DROPBEAR_BANNER=""@DROPBEAR_BANNER="/etc/banner.txt"@g' /etc/default/dropbear
+    wget -O /etc/kyt.txt "${REPO}banner/issue.net"
+    wget -O /etc/banner.txt "${REPO}banner/issue.net"
+    
+    # Konfigurasi fail2ban untuk SSH
+    cat > /etc/fail2ban/jail.local <<EOF
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 600
+EOF
+
+    # Restart fail2ban untuk menerapkan konfigurasi
+    systemctl restart fail2ban
+    
+    print_success "Fail2ban"
 }
+
 function ins_epro(){
 clear
 print_install "Menginstall ePro WebSocket Proxy"
@@ -737,6 +757,11 @@ cat >/etc/cron.d/logclean <<-END
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 */10 * * * * root /usr/local/sbin/clearlog
+END
+cat >/etc/cron.d/autobackup <<-END
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+5 0 * * * root backup
 END
 chmod 644 /root/.profile
 cat >/etc/cron.d/daily_reboot <<-END
