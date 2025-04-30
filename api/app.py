@@ -327,6 +327,26 @@ def list_protocols():
         'protocols': SUPPORTED_PROTOCOLS
     })
 
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    """
+    Endpoint untuk cek status API (health check).
+    Mengembalikan respons sukses dengan timestamp.
+    """
+    try:
+        logger.debug("Ping request received")  # Log untuk debugging
+        return jsonify({
+            'status': 'success',
+            'message': 'API is running',
+            'timestamp': datetime.datetime.now().isoformat()  # Tambahkan timestamp
+        }), 200
+    except Exception as e:
+        logger.error(f"Ping error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Internal server error'
+        }), 500
+
 if __name__ == '__main__':
     # Pastikan bind ke semua interface
     app.run(host='0.0.0.0', port=8082, debug=False)
