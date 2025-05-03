@@ -30,7 +30,9 @@ install_dependencies() {
         jq \
         uuid-runtime \
         curl \
-        wget
+        wget \
+        git \
+        build-essential
     
     # Buat virtual environment
     python3 -m venv /opt/vpn-api-env
@@ -46,7 +48,8 @@ install_dependencies() {
         flask \
         gunicorn \
         requests \
-        python-dotenv
+        python-dotenv \
+        pyyaml
     
     # Kembalikan ke shell normal
     deactivate
@@ -55,20 +58,19 @@ install_dependencies() {
 # Persiapan Direktori
 prepare_directory() {
     log_install "Menyiapkan direktori API"
-    mkdir -p "$APP_DIR"  # Buat direktori api
-    mkdir -p "$API_DIR/logs"
+    mkdir -p "$APP_DIR" "$API_DIR/logs"
+    mkdir -p /usr/local/sbin
     
     # Buat struktur folder modular
-    mkdir -p "$APP_DIR/config"
-    mkdir -p "$APP_DIR/utils"
-    mkdir -p "$APP_DIR/services"
-    mkdir -p "$APP_DIR/routes"
+    mkdir -p "$APP_DIR"/{config,utils,services,routes}
     
     # Buat __init__.py untuk setiap folder
-    touch "$APP_DIR/config/__init__.py"
-    touch "$APP_DIR/utils/__init__.py"
-    touch "$APP_DIR/services/__init__.py"
-    touch "$APP_DIR/routes/__init__.py"
+    touch "$APP_DIR"/{config,utils,services,routes}/__init__.py
+    
+    # Buat direktori log
+    mkdir -p /var/log/vpn-api
+    chown -R root:root /var/log/vpn-api
+    chmod -R 755 /var/log/vpn-api
 }
 
 # Download File Modular
@@ -79,31 +81,39 @@ download_modular_files() {
     BASE_URL="https://raw.githubusercontent.com/zxeeds/vip-script/main/api"
     
     # File utama
-    wget -O "$APP_DIR/app.py" "$BASE_URL/app.py"
+    wget -q -O "$APP_DIR/app.py" "$BASE_URL/app.py"
     
     # Config
-    wget -O "$APP_DIR/config/config_manager.py" "$BASE_URL/config/config_manager.py"
+    wget -q -O "$APP_DIR/config/config_manager.py" "$BASE_URL/config/config_manager.py"
     
     # Utils
-    wget -O "$APP_DIR/utils/logger.py" "$BASE_URL/utils/logger.py"
-    wget -O "$APP_DIR/utils/validators.py" "$BASE_URL/utils/validators.py"
-    wget -O "$APP_DIR/utils/subprocess_utils.py" "$BASE_URL/utils/subprocess_utils.py"
+    wget -q -O "$APP_DIR/utils/logger.py" "$BASE_URL/utils/logger.py"
+    wget -q -O "$APP_DIR/utils/validators.py" "$BASE_URL/utils/validators.py"
+    wget -q -O "$APP_DIR/utils/subprocess_utils.py" "$BASE_URL/utils/subprocess_utils.py"
     
     # Services
-    wget -O "$APP_DIR/services/user_service.py" "$BASE_URL/services/user_service.py"
+    wget -q -O "$APP_DIR/services/user_service.py" "$BASE_URL/services/user_service.py"
     
     # Routes
-    wget -O "$APP_DIR/routes/user_routes.py" "$BASE_URL/routes/user_routes.py"
-    wget -O "$APP_DIR/routes/health_routes.py" "$BASE_URL/routes/health_routes.py"
+    wget -q -O "$APP_DIR/routes/user_routes.py" "$BASE_URL/routes/user_routes.py"
+    wget -q -O "$APP_DIR/routes/health_routes.py" "$BASE_URL/routes/health_routes.py"
     
     # Generate API key
     API_KEY=$(openssl rand -hex 32)
     
-    # Download config.json template
-    wget -O "$API_DIR/config.json" "$BASE_URL/config.json"
-    
-    # Modifikasi config.json dengan API key baru
-    sed -i "s/\"api_key\": \"[^\"]*\"/\"api_key\": \"$API_KEY\"/g" "$API_DIR/config.json"
+    # Buat config.json
+    cat > "$API_DIR/config.json" << EOL
+{
+  "api_key": "$API_KEY",
+  "allowed_ips": ["127.0.0.1"],
+  "protocols_allowed": ["vmess", "vless", "trojan", "ssh"],
+  "port": 8082,
+  "log_dir": "/var/log/vpn-api",
+  "default_quota": 100,
+  "default_validity": 30,
+  "max_ip_limit": 5
+}
+EOL
     
     # Set permissions
     chmod 644 "$APP_DIR/app.py"
@@ -116,6 +126,26 @@ download_modular_files() {
     log_install "API Key berhasil digenerate"
 }
 
+# Install Script CLI
+install_cli_scripts() {
+    log_install "Menginstall script CLI"
+    
+    # Download script dari GitHub
+    SCRIPTS=("add-vme" "del-vme" "renew-vme" 
+             "add-vle" "del-vle" "renew-vle"
+             "add-tro" "del-tro" "renew-tro"
+             "add-ssh" "del-ssh" "renew-ssh")
+    
+    for script in "${SCRIPTS[@]}"; do
+        wget -q -O "/usr/local/sbin/$script" "https://raw.githubusercontent.com/zxeeds/vip-script/main/scripts/$script"
+        chmod +x "/usr/local/sbin/$script"
+    done
+    
+    # Berikan permission
+    chown -R root:root /usr/local/sbin
+    chmod -R 750 /usr/local/sbin
+}
+
 # Buat Systemd Service
 create_systemd_service() {
     log_install "Membuat Systemd Service"
@@ -123,26 +153,24 @@ create_systemd_service() {
 [Unit]
 Description=VPN API Service
 After=network.target
-Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-Group=root
 WorkingDirectory=$APP_DIR
-Environment=PATH=/opt/vpn-api-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=$APP_DIR
-ExecStart=/opt/vpn-api-env/bin/gunicorn \
-    --bind 0.0.0.0:8082 \
-    --workers 2 \
-    --threads 4 \
-    --log-level=debug \
-    --log-file=$API_DIR/logs/gunicorn.log \
-    --capture-output \
-    --enable-stdio-inheritance \
+Environment="PYTHONPATH=$APP_DIR"
+Environment="FLASK_APP=app.py"
+ExecStart=/opt/vpn-api-env/bin/gunicorn \\
+    --bind 0.0.0.0:8082 \\
+    --workers 2 \\
+    --threads 4 \\
+    --timeout 120 \\
+    --log-level debug \\
+    --access-logfile /var/log/vpn-api/access.log \\
+    --error-logfile /var/log/vpn-api/error.log \\
+    --capture-output \\
     app:app
-
-Restart=always
+Restart=on-failure
 RestartSec=10
 
 [Install]
@@ -175,22 +203,52 @@ enable_service() {
     systemctl start vpn-api
 }
 
+# Verifikasi Instalasi
+verify_installation() {
+    log_install "Verifikasi instalasi"
+    
+    # Cek service status
+    if ! systemctl is-active --quiet vpn-api; then
+        log_install "ERROR: Service tidak berjalan"
+        journalctl -u vpn-api -n 20 --no-pager
+        exit 1
+    fi
+    
+    # Test endpoint dasar
+    API_KEY=$(jq -r '.api_key' $API_DIR/config.json)
+    response=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: $API_KEY" http://localhost:8082/api/ping)
+    
+    if [ "$response" != "200" ]; then
+        log_install "ERROR: Test endpoint gagal (HTTP $response)"
+        tail -n 20 /var/log/vpn-api/error.log
+        exit 1
+    fi
+    
+    log_install "Verifikasi berhasil"
+}
+
 # Proses Utama
 main() {
     install_dependencies
     prepare_directory
     download_modular_files
+    install_cli_scripts
     create_systemd_service
     configure_firewall
     enable_service
+    verify_installation
     
     log_install "Instalasi API VPN Selesai"
     log_install "API berjalan di port 8082"
     log_install "Struktur modular terinstall di: $APP_DIR"
+    log_install "Script CLI terinstall di: /usr/local/sbin"
 
     # Tampilkan API key
+    echo "=============================================="
     echo "API Key tersimpan di: $API_DIR/api_key.txt"
-    cat "$API_DIR/api_key.txt"
+    echo "Gunakan header berikut untuk akses API:"
+    echo "Authorization: $(cat $API_DIR/api_key.txt | cut -d' ' -f3)"
+    echo "=============================================="
 }
 
 # Jalankan

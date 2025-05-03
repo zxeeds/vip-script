@@ -5,5 +5,7 @@
   "log_path": "/var/log/vpn-api.log",
   "user_database": "/etc/vpn-api/users.json",
   "protocols_allowed": ["vmess", "vless", "trojan", "ssh"],
-  "default_user_validity_days": 30
+  "port": 8082,
+  "default_user_validity_days": 30,
+  "log_dir": "/var/log/vpn-api"
 }

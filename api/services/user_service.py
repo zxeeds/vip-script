@@ -1,8 +1,8 @@
+import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from utils.subprocess_utils import run_subprocess
 from config.config_manager import ConfigManager
-from typing import Dict, List
 
 logger = logging.getLogger('vpn_api')
 config = ConfigManager()
@@ -15,7 +15,7 @@ class UserService:
             'renew': '/usr/local/sbin/renew-vme'
         },
         'vless': {
-            'add': '/usr/local/sbin/add-vle',
+            'add': '/usr/local/sbin/add-vle', 
             'delete': '/usr/local/sbin/del-vle',
             'renew': '/usr/local/sbin/renew-vle'
         },
@@ -30,20 +30,6 @@ class UserService:
             'renew': '/usr/local/sbin/renew-ssh'
         }
     }
-
-    def _validate_input(self, data: Dict) -> Optional[Dict]:
-        """Validasi input dasar"""
-        if 'username' not in data:
-            return {'success': False, 'error': 'Username wajib diisi', 'code': 400}
-        
-        if data.get('protocol') not in self.PROCOL_SCRIPTS:
-            return {'success': False, 'error': 'Protokol tidak didukung', 'code': 400}
-        
-        action = data.get('action', 'add').lower()
-        if action not in ['add', 'delete', 'renew']:
-            return {'success': False, 'error': 'Action tidak valid', 'code': 400}
-        
-        return None
 
     def _build_ssh_args(self, action: str, data: Dict) -> List[str]:
         """Build arguments for SSH commands"""
@@ -60,24 +46,61 @@ class UserService:
 
     def _build_xray_args(self, protocol: str, action: str, data: Dict) -> List[str]:
         """Build arguments for Xray protocols"""
-        args = [
-            self.PROTOCOL_SCRIPTS[protocol][action],
-            data['username'],
-            str(data.get('quota', 100)),
-            str(data.get('ip_limit', 3)),
-            str(data.get('validity', 30))
-        ]
+        if action == 'delete':
+            # Untuk delete, hanya kirim username
+            args = [
+                self.PROTOCOL_SCRIPTS[protocol][action],
+                data['username']
+            ]
+        elif action == 'renew':
+            # Untuk renew, kirim dalam format yang sesuai dengan script renew-vme yang dimodifikasi
+            args = [
+                self.PROTOCOL_SCRIPTS[protocol][action],
+                'api',
+                '--username', data['username'],
+                '--quota', str(data.get('quota', 100)),
+                '--limit', str(data.get('ip_limit', 3)),
+                '--duration', str(data.get('validity', 30))
+            ]
+        else:  # action == 'add'
+            # Untuk add, kirim semua parameter dalam format posisional
+            args = [
+                self.PROTOCOL_SCRIPTS[protocol][action],
+                data['username'],
+                str(data.get('quota', 100)),
+                str(data.get('ip_limit', 3)),
+                str(data.get('validity', 30))
+            ]
+        
         return args
 
-    def manage_user(self, data: Dict) -> Dict:
-        """Main method untuk manage user"""
-        if error := self._validate_input(data):
-            return error
 
+
+    def manage_user(self, data: Dict) -> Dict:
+        """Main method to handle user management"""
         action = data.get('action', 'add').lower()
         protocol = data.get('protocol', 'vmess').lower()
-
+        username = data.get('username')
+        
         try:
+            # Validasi tambahan
+            if not username:
+                return {
+                    'success': False,
+                    'error': 'Username is required',
+                    'code': 400,
+                    'data': None
+                }
+
+            if protocol == 'ssh' and action == 'add' and not data.get('password'):
+                return {
+                    'success': False,
+                    'error': 'Password is required for SSH',
+                    'code': 400,
+                    'data': None
+                }
+
+            # Bangun argumen
             if protocol == 'ssh' and action == 'add':
                 args = self._build_ssh_args(action, data)
             else:
@@ -86,14 +109,48 @@ class UserService:
             if action == 'delete':
                 args.append("api_mode")
 
-            return run_subprocess(args)
+            # Jalankan proses
+            result = run_subprocess(args)
+            
+            # Standarisasi response
+            if not isinstance(result, dict):
+                logger.error(f"Invalid subprocess response: {result}")
+                return {
+                    'success': False,
+                    'error': 'Invalid subprocess response',
+                    'code': 500,
+                    'data': None
+                }
+                    
+            # Jika subprocess mengembalikan status error, log dengan detail
+            if not result.get('success', False):
+                logger.error(f"Subprocess error: {result.get('error')}")
+                
+            # Kembalikan hasil yang sudah distandarisasi
+            return {
+                'success': result.get('success', False),
+                'data': result.get('data'),
+                'error': result.get('error'),
+                'code': result.get('code', 500) if not result.get('success', False) else 200
+            }
 
         except KeyError as e:
-            logger.error(f"Parameter kurang: {str(e)}")
-            return {'success': False, 'error': f"Parameter kurang: {str(e)}", 'code': 400}
+            logger.error(f"Missing parameter: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': f'Missing parameter: {str(e)}',
+                'code': 400,
+                'data': None
+            }
         except Exception as e:
-            logger.error(f"Error: {str(e)}")
-            return {'success': False, 'error': str(e), 'code': 500}
+            logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'code': 500,
+                'data': None
+            }
+
 
     def renew_user(self, protocol: str, username: str, data: Dict) -> Dict:
         """Alias untuk manage_user dengan action=renew"""

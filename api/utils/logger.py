@@ -1,36 +1,42 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from config.config_manager import ConfigManager
+
+# Buat logger instance GLOBAL
+logger = logging.getLogger('vpn_api')
 
 def setup_logging():
-    """Setup logging configuration"""
-    config = ConfigManager()
-    
-    log_dir = config.get('log_dir', '/var/log/vpn-api')
-    os.makedirs(log_dir, exist_ok=True)
-    
-    logger = logging.getLogger('vpn_api')
+    """Initialize logging configuration"""
+    # Konfigurasi dasar
     logger.setLevel(logging.DEBUG)
     
-    # File handler with rotation
+    # Buat formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    
+    # File handler
+    log_dir = '/var/log/vpn-api'
+    os.makedirs(log_dir, exist_ok=True)
+    
     file_handler = RotatingFileHandler(
         os.path.join(log_dir, 'vpn-api.log'),
-        maxBytes=10 * 1024 * 1024,  # 10 MB
+        maxBytes=10*1024*1024,
         backupCount=5
     )
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
-    ))
+    file_handler.setFormatter(formatter)
     
     # Console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter(
-        '%(levelname)s - %(message)s'
-    ))
+    console_handler.setFormatter(formatter)
     
+    # Tambahkan handler
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-    
-    return logger
+
+# Panggil saat modul diimport
+setup_logging()
+
+# Ekspor logger
+__all__ = ['logger', 'setup_logging']
