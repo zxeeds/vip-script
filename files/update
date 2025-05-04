@@ -1,21 +1,31 @@
 #!/bin/bash
+
 ######################################
 MYIP=$(curl -sS ipv4.icanhazip.com)
 ######################################
 IPVPS=$(curl -s ipv4.icanhazip.com)
 ISP=$(cat /etc/xray/isp)
 CITY=$(cat /etc/xray/city)
+
 echo ""
 clear
-cd /usr/local/
-rm -rf sbin
-rm -rf /usr/bin/enc
-cd
-mkdir /usr/local/sbin
+
+# Buat backup direktori sbin sebelum menghapus
+if [ -d "/usr/local/sbin" ]; then
+    mkdir -p /usr/local/sbin_backup
+    cp -r /usr/local/sbin/* /usr/local/sbin_backup/ 2>/dev/null
+fi
+
+# Buat direktori jika tidak ada
+mkdir -p /usr/local/sbin
+
 dateFromServer=$(curl -v --insecure --silent https://google.com/ 2>&1 | grep Date | sed -e 's/< Date: //')
 biji=`date +"%Y-%m-%d" -d "$dateFromServer"`
+
 red() { echo -e "\\033[32;1m${*}\\033[0m"; }
+
 clear
+
 fun_bar() {
     CMD[0]="$1"
     CMD[1]="$2"
@@ -42,19 +52,41 @@ fun_bar() {
     echo -e "\033[0;33m]\033[1;37m -\033[1;32m OK !\033[1;37m"
     tput cnorm
 }
+
 res1() {
-    wget https://raw.githubusercontent.com/zxeeds/vip-script/main/Features/menu.zip
-    wget -q -O /usr/bin/enc "hhttps://raw.githubusercontent.com/zxeeds/vip-script/main/enc/encrypt" ; chmod +x /usr/bin/enc
-    7z e -paskykenza123 menu.zip
-    unzip menu.zip
+    # Unduh file menu.zip
+    wget -q https://raw.githubusercontent.com/zxeeds/vip-script/main/Features/menu.zip
+    
+    # Unduh file enkripsi dengan URL yang benar
+    wget -q -O /usr/bin/enc "https://raw.githubusercontent.com/zxeeds/vip-script/main/enc/encrypt"
+    
+    # Berikan izin eksekusi pada file enkripsi
+    chmod +x /usr/bin/enc
+    
+    # Ekstrak file menu.zip tanpa password
+    unzip -o menu.zip
+    
+    # Berikan izin eksekusi pada semua file di direktori menu
     chmod +x menu/*
+    
+    # Enkripsi file-file menu
     enc menu/*
-    mv menu/* /usr/local/sbin
+    
+    # Pindahkan file-file menu ke direktori /usr/local/sbin
+    mv menu/* /usr/local/sbin/
+    
+    # Pastikan semua file di /usr/local/sbin memiliki izin eksekusi
+    chmod +x /usr/local/sbin/*
+    
+    # Bersihkan file-file sementara
     rm -rf menu
     rm -rf menu.zip
-    rm -rf update
 }
-netfilter-persistent
+
+# Pastikan netfilter-persistent terinstal
+apt-get update -y
+apt-get install -y netfilter-persistent
+
 clear
 echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
 echo -e " \e[1;97;101m          UPDATE SCRIPT       \e[0m"
@@ -66,5 +98,10 @@ echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━�
 echo -e ""
 echo -e "\033[96;1mWait in 3 second...\033[0m"
 sleep 3
-#read -n 1 -s -r -p "Press [ Enter ] to back on menu"
-welcome
+
+# Jalankan menu welcome jika ada
+if [ -f "/usr/local/sbin/welcome" ]; then
+    welcome
+else
+    echo -e "\033[1;31mWelcome script not found. Update may be incomplete.\033[0m"
+fi
