@@ -88,7 +88,6 @@ download_modular_files() {
     
     # File utama
     wget -q -O "$APP_DIR/app.py" "$BASE_URL/app.py"
-    wget -q -O "$APP_DIR/wsgi.py" "$BASE_URL/wsgi.py"
     
     # Config
     wget -q -O "$APP_DIR/config/config_manager.py" "$BASE_URL/config/config_manager.py"
