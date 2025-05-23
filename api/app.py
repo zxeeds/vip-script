@@ -23,12 +23,13 @@ def configure_app():
         with app.app_context():
             from routes.health_routes import init_health_routes
             from routes.user_routes import init_user_routes
+            from routes.quota_routes import init_quota_routes  # Tambahkan import ini
             
             init_health_routes(app)
             init_user_routes(app)
-            
+            init_quota_routes(app)  # Tambahkan inisialisasi ini
+        
         logger.info("Aplikasi berhasil dikonfigurasi")
-    
     except Exception as e:
         logger.critical(f"Gagal konfigurasi: {str(e)}", exc_info=True)
         raise

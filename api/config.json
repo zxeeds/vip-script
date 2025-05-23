@@ -1,6 +1,6 @@
 {
   "api_key": "T5mJGsYw49AZSaToZ0LuU595K1lFa9b0RgIFA3Px6gZDxIn1HZFkWqzGnUK7e6JK",
-  "allowed_ips": ["127.0.0.1", "128.199.116.60", "localhost"],
+  "allowed_ips": ["127.0.0.1", "103.59.160.183", "68.183.191.119", "178.128.56.35", "localhost"],
   "max_users": 100,
   "log_path": "/var/log/vpn-api.log",
   "user_database": "/etc/vpn-api/users.json",
