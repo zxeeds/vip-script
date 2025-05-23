@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # Konfigurasi Dasar
 API_DIR="/etc/vpn-api"
 SERVICE_FILE="/etc/systemd/system/vpn-api.service"
@@ -11,8 +12,8 @@ log_install() {
 
 # Validasi Root
 if [[ $EUID -ne 0 ]]; then
-   log_install "Script harus dijalankan sebagai root" 
-   exit 1
+   log_install "Script harus dijalankan sebagai root"
+    exit 1
 fi
 
 # Instalasi Dependensi
@@ -71,6 +72,11 @@ prepare_directory() {
     mkdir -p /var/log/vpn-api
     chown -R root:root /var/log/vpn-api
     chmod -R 755 /var/log/vpn-api
+    
+    # Buat direktori limit untuk quota
+    log_install "Menyiapkan direktori limit untuk quota"
+    mkdir -p /etc/limit/{vmess,vless,trojan}
+    chmod -R 755 /etc/limit
 }
 
 # Download File Modular
@@ -82,9 +88,11 @@ download_modular_files() {
     
     # File utama
     wget -q -O "$APP_DIR/app.py" "$BASE_URL/app.py"
+    wget -q -O "$APP_DIR/wsgi.py" "$BASE_URL/wsgi.py"
     
     # Config
     wget -q -O "$APP_DIR/config/config_manager.py" "$BASE_URL/config/config_manager.py"
+    wget -q -O "$API_DIR/config.json" "$BASE_URL/config.json"  # Unduh config.json dari GitHub
     
     # Utils
     wget -q -O "$APP_DIR/utils/logger.py" "$BASE_URL/utils/logger.py"
@@ -93,16 +101,25 @@ download_modular_files() {
     
     # Services
     wget -q -O "$APP_DIR/services/user_service.py" "$BASE_URL/services/user_service.py"
+    wget -q -O "$APP_DIR/services/quota_service.py" "$BASE_URL/services/quota_service.py"  # Tambahkan quota service
     
     # Routes
     wget -q -O "$APP_DIR/routes/user_routes.py" "$BASE_URL/routes/user_routes.py"
     wget -q -O "$APP_DIR/routes/health_routes.py" "$BASE_URL/routes/health_routes.py"
+    wget -q -O "$APP_DIR/routes/quota_routes.py" "$BASE_URL/routes/quota_routes.py"  # Tambahkan quota routes
     
-    # Generate API key
+    # Generate API key dan perbarui config.json
     API_KEY=$(openssl rand -hex 32)
     
-    # Buat config.json
-    cat > "$API_DIR/config.json" << EOL
+    # Perbarui API key di config.json yang diunduh
+    if [ -f "$API_DIR/config.json" ]; then
+        # Gunakan jq untuk memperbarui API key
+        jq --arg key "$API_KEY" '.api_key = $key' "$API_DIR/config.json" > "$API_DIR/config.json.tmp"
+        mv "$API_DIR/config.json.tmp" "$API_DIR/config.json"
+    else
+        # Jika file tidak ada, buat config.json baru
+        log_install "PERINGATAN: config.json tidak ditemukan, membuat file baru"
+        cat > "$API_DIR/config.json" << EOL
 {
   "api_key": "$API_KEY",
   "allowed_ips": ["127.0.0.1"],
@@ -114,6 +131,7 @@ download_modular_files() {
   "max_ip_limit": 5
 }
 EOL
+    fi
     
     # Set permissions
     chmod 644 "$APP_DIR/app.py"
@@ -124,26 +142,6 @@ EOL
     chmod 600 "$API_DIR/api_key.txt"
     
     log_install "API Key berhasil digenerate"
-}
-
-# Install Script CLI
-install_cli_scripts() {
-    log_install "Menginstall script CLI"
-    
-    # Download script dari GitHub
-    SCRIPTS=("add-vme" "del-vme" "renew-vme" 
-             "add-vle" "del-vle" "renew-vle"
-             "add-tro" "del-tro" "renew-tro"
-             "add-ssh" "del-ssh" "renew-ssh")
-    
-    for script in "${SCRIPTS[@]}"; do
-        wget -q -O "/usr/local/sbin/$script" "https://raw.githubusercontent.com/zxeeds/vip-script/main/scripts/$script"
-        chmod +x "/usr/local/sbin/$script"
-    done
-    
-    # Berikan permission
-    chown -R root:root /usr/local/sbin
-    chmod -R 750 /usr/local/sbin
 }
 
 # Buat Systemd Service
@@ -232,7 +230,6 @@ main() {
     install_dependencies
     prepare_directory
     download_modular_files
-    install_cli_scripts
     create_systemd_service
     configure_firewall
     enable_service
@@ -242,12 +239,19 @@ main() {
     log_install "API berjalan di port 8082"
     log_install "Struktur modular terinstall di: $APP_DIR"
     log_install "Script CLI terinstall di: /usr/local/sbin"
-
+    
     # Tampilkan API key
     echo "=============================================="
     echo "API Key tersimpan di: $API_DIR/api_key.txt"
     echo "Gunakan header berikut untuk akses API:"
     echo "Authorization: $(cat $API_DIR/api_key.txt | cut -d' ' -f3)"
+    echo "=============================================="
+    
+    # Tampilkan informasi endpoint quota
+    echo "Endpoint Quota yang tersedia:"
+    echo "- GET /api/quota/<username>/<protocol> - Mendapatkan kuota pengguna"
+    echo "- GET /api/quota/all/<protocol> - Mendapatkan kuota semua pengguna untuk protokol tertentu"
+    echo "- GET /api/quota/summary - Mendapatkan ringkasan kuota untuk semua protokol"
     echo "=============================================="
 }
 
