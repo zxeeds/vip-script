@@ -1,103 +1,106 @@
 from flask import jsonify, request
-from utils.logger import logger
 from services.quota_service import QuotaService
+from utils.logger import logger
 from config.config_manager import ConfigManager
+from functools import wraps
 
-# Inisialisasi service dan config
-quota_service = QuotaService()
-config = ConfigManager()
+def validate_api_key_and_ip(f):
+    """Decorator untuk validasi API key dan IP address"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        config = ConfigManager()
+        
+        # Validasi API Key
+        api_key = request.headers.get('Authorization')
+        if not api_key or api_key != config.api_key:
+            logger.warning(f"Unauthorized access attempt with invalid API key from {request.remote_addr}")
+            return jsonify({
+                "success": False,
+                "error": "Invalid API key"
+            }), 401
+        
+        # Validasi IP Address
+        client_ip = request.remote_addr
+        allowed_ips = config.allowed_ips
+        
+        # Jika allowed_ips tidak kosong, validasi IP
+        if allowed_ips and client_ip not in allowed_ips:
+            logger.warning(f"Unauthorized access attempt from IP {client_ip}")
+            return jsonify({
+                "success": False,
+                "error": "IP address not allowed"
+            }), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 def init_quota_routes(app):
-    """
-    Inisialisasi rute untuk pengecekan kuota
-    """
-    logger.info("Inisialisasi rute quota...")
+    """Inisialisasi routes untuk quota"""
+    
+    quota_service = QuotaService()
+    
+    @app.route('/api/quota/all', methods=['GET'])
+    @validate_api_key_and_ip
+    def get_all_users_quota():
+        """
+        Mendapatkan informasi kuota untuk semua user
+        """
+        try:
+            logger.info("Request kuota untuk semua user")
+            result = quota_service.get_all_users_quota()
+            
+            if "error" in result:
+                return jsonify({
+                    "success": False,
+                    "error": result["error"]
+                }), 500
+            
+            return jsonify({
+                "success": True,
+                "data": result
+            })
+            
+        except Exception as e:
+            logger.error(f"Error mendapatkan kuota semua user: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
 
-    @app.route('/api/quota/user/<protocol>/<username>', methods=['GET'])
-    def get_user_quota(protocol, username):
+    @app.route('/api/quota/<username>', methods=['GET'])
+    @validate_api_key_and_ip
+    def get_user_quota(username):
         """
-        Mendapatkan informasi kuota pengguna
+        Mendapatkan informasi kuota untuk user tertentu
         """
-        # Validasi API key
-        api_key = request.headers.get('Authorization')
-        client_ip = request.remote_addr
-        
-        if not api_key or api_key != config.get_api_key():
-            logger.warning(f"Unauthorized access attempt from {client_ip}")
-            return jsonify({"success": False, "message": "Unauthorized"}), 401
-        
-        allowed_ips = config.get_allowed_ips()
-        if allowed_ips and client_ip not in allowed_ips and '0.0.0.0' not in allowed_ips:
-            logger.warning(f"Access attempt from unauthorized IP: {client_ip}")
-            return jsonify({"success": False, "message": "IP not allowed"}), 403
-        
-        logger.info(f"Request kuota untuk pengguna {username} protocol {protocol}")
-        result = quota_service.get_user_quota(username, protocol)
-        
-        if "error" in result:
-            return jsonify({"success": False, "message": result["error"]}), 400
-        
-        return jsonify({"success": True, "data": result})
+        try:
+            logger.info(f"Request kuota untuk user {username}")
+            
+            # Validasi username
+            if not username or len(username.strip()) == 0:
+                return jsonify({
+                    "success": False,
+                    "error": "Username tidak boleh kosong"
+                }), 400
+            
+            result = quota_service.get_user_quota(username.strip())
+            
+            if "error" in result:
+                return jsonify({
+                    "success": False,
+                    "error": result["error"]
+                }), 404
+            
+            return jsonify({
+                "success": True,
+                "data": result
+            })
+            
+        except Exception as e:
+            logger.error(f"Error mendapatkan kuota user {username}: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
 
-    @app.route('/api/quota/all/<protocol>', methods=['GET'])
-    def get_all_users_quota(protocol):
-        """
-        Mendapatkan informasi kuota untuk semua pengguna dari protocol tertentu
-        """
-        # Validasi API key
-        api_key = request.headers.get('Authorization')
-        client_ip = request.remote_addr
-        
-        if not api_key or api_key != config.get_api_key():
-            logger.warning(f"Unauthorized access attempt from {client_ip}")
-            return jsonify({"success": False, "message": "Unauthorized"}), 401
-        
-        allowed_ips = config.get_allowed_ips()
-        if allowed_ips and client_ip not in allowed_ips and '0.0.0.0' not in allowed_ips:
-            logger.warning(f"Access attempt from unauthorized IP: {client_ip}")
-            return jsonify({"success": False, "message": "IP not allowed"}), 403
-        
-        logger.info(f"Request kuota untuk semua pengguna protocol {protocol}")
-        result = quota_service.get_all_users_quota(protocol)
-        
-        if "error" in result:
-            return jsonify({"success": False, "message": result["error"]}), 400
-        
-        return jsonify({"success": True, "data": result})
-
-    @app.route('/api/quota/summary', methods=['GET'])
-    def get_quota_summary():
-        """
-        Mendapatkan ringkasan kuota untuk semua protocol
-        """
-        # Validasi API key
-        api_key = request.headers.get('Authorization')
-        client_ip = request.remote_addr
-        
-        if not api_key or api_key != config.get_api_key():
-            logger.warning(f"Unauthorized access attempt from {client_ip}")
-            return jsonify({"success": False, "message": "Unauthorized"}), 401
-        
-        allowed_ips = config.get_allowed_ips()
-        if allowed_ips and client_ip not in allowed_ips and '0.0.0.0' not in allowed_ips:
-            logger.warning(f"Access attempt from unauthorized IP: {client_ip}")
-            return jsonify({"success": False, "message": "IP not allowed"}), 403
-        
-        logger.info("Request ringkasan kuota untuk semua protocol")
-        protocols = ["vmess", "vless", "trojan"]
-        summary = {}
-        
-        for protocol in protocols:
-            result = quota_service.get_all_users_quota(protocol)
-            if "error" not in result:
-                summary[protocol] = {
-                    "total_users": len(result["users"]),
-                    "active_users": sum(1 for user in result["users"] if user["status"] == "active"),
-                    "expired_users": sum(1 for user in result["users"] if user["status"] == "expired")
-                }
-            else:
-                summary[protocol] = {"error": result["error"]}
-        
-        return jsonify({"success": True, "data": summary})
-
-    logger.info("Rute quota berhasil diinisialisasi")
+    logger.info("Quota routes berhasil diinisialisasi")
