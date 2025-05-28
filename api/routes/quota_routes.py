@@ -19,17 +19,17 @@ def validate_api_key_and_ip(f):
                 "error": "Invalid API key"
             }), 401
         
-        # Validasi IP Address
+        # Validasi IP Address - Temporarily disabled
         client_ip = request.remote_addr
         allowed_ips = config.allowed_ips
         
-        # Jika allowed_ips tidak kosong, validasi IP
-        if allowed_ips and client_ip not in allowed_ips:
-            logger.warning(f"Unauthorized access attempt from IP {client_ip}")
-            return jsonify({
-                "success": False,
-                "error": "IP address not allowed"
-            }), 403
+        # # Jika allowed_ips tidak kosong, validasi IP
+        # if allowed_ips and client_ip not in allowed_ips:
+        #     logger.warning(f"Unauthorized access attempt from IP {client_ip}")
+        #     return jsonify({
+        #         "success": False,
+        #         "error": "IP address not allowed"
+        #     }), 403
         
         return f(*args, **kwargs)
     return decorated_function

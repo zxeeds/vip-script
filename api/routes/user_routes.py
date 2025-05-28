@@ -16,12 +16,13 @@ def init_user_routes(app):
     def manage_user():
         """Handle user management requests"""
         client_ip = request.remote_addr
-        if not validate_ip(client_ip):
-            logger.warning(f"Unauthorized IP: {client_ip}")
-            return jsonify({
-                'status': 'error',
-                'message': 'IP not allowed'
-            }), 403
+        # Temporarily disabled IP validation
+        # if not validate_ip(client_ip):
+        #     logger.warning(f"Unauthorized IP: {client_ip}")
+        #     return jsonify({
+        #         'status': 'error',
+        #         'message': 'IP not allowed'
+        #     }), 403
 
         api_key = request.headers.get('Authorization')
         if not validate_api_key(api_key):
@@ -72,11 +73,12 @@ def init_user_routes(app):
     def renew_user():
         """Handle user renewal requests"""
         client_ip = request.remote_addr
-        if not validate_ip(client_ip):
-            return jsonify({
-                'status': 'error',
-                'message': 'IP not allowed'
-            }), 403
+        # Temporarily disabled IP validation
+        # if not validate_ip(client_ip):
+        #     return jsonify({
+        #         'status': 'error',
+        #         'message': 'IP not allowed'
+        #     }), 403
 
         if not validate_api_key(request.headers.get('Authorization')):
             return jsonify({
