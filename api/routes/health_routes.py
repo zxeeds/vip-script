@@ -11,10 +11,10 @@ def init_health_routes(app):
             client_ip = request.remote_addr
             logger.info(f"Ping request from {client_ip}")
             
-            # Validasi IP
-            if not validate_ip(client_ip):
-                logger.warning(f"Unauthorized IP: {client_ip}")
-                return jsonify({"status": "error", "message": "IP not allowed"}), 403
+            # Validasi IP - Temporarily disabled
+            # if not validate_ip(client_ip):
+            #     logger.warning(f"Unauthorized IP: {client_ip}")
+            #     return jsonify({"status": "error", "message": "IP not allowed"}), 403
 
             # Validasi API Key
             if not validate_api_key(request.headers.get('Authorization')):
