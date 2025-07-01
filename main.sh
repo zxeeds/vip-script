@@ -659,42 +659,61 @@ EOF
 }
 
 function ins_epro(){
-clear
-print_install "Menginstall ePro WebSocket Proxy"
-wget -O /usr/bin/ws "${REPO}files/ws" >/dev/null 2>&1
-wget -O /usr/bin/tun.conf "${REPO}cfg/tun.conf" >/dev/null 2>&1
-wget -O /etc/systemd/system/ws.service "${REPO}files/ws.service" >/dev/null 2>&1
-chmod +x /etc/systemd/system/ws.service
-chmod +x /usr/bin/ws
-chmod 644 /usr/bin/tun.conf
-systemctl disable ws
-systemctl stop ws
-systemctl enable ws
-systemctl start ws
-systemctl restart ws
-wget -q -O /usr/local/share/xray/geosite.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" >/dev/null 2>&1
-wget -q -O /usr/local/share/xray/geoip.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" >/dev/null 2>&1
-wget -O /usr/sbin/ftvpn "${REPO}files/ftvpn" >/dev/null 2>&1
-chmod +x /usr/sbin/ftvpn
-iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP
-iptables -A FORWARD -m string --string "announce_peer" --algo bm -j DROP
-iptables -A FORWARD -m string --string "find_node" --algo bm -j DROP
-iptables -A FORWARD -m string --algo bm --string "BitTorrent" -j DROP
-iptables -A FORWARD -m string --algo bm --string "BitTorrent protocol" -j DROP
-iptables -A FORWARD -m string --algo bm --string "peer_id=" -j DROP
-iptables -A FORWARD -m string --algo bm --string ".torrent" -j DROP
-iptables -A FORWARD -m string --algo bm --string "announce.php?passkey=" -j DROP
-iptables -A FORWARD -m string --algo bm --string "torrent" -j DROP
-iptables -A FORWARD -m string --algo bm --string "announce" -j DROP
-iptables -A FORWARD -m string --algo bm --string "info_hash" -j DROP
-iptables-save > /etc/iptables.up.rules
-iptables-restore -t < /etc/iptables.up.rules
-netfilter-persistent save
-netfilter-persistent reload
-cd
-apt autoclean -y >/dev/null 2>&1
-apt autoremove -y >/dev/null 2>&1
-print_success "ePro WebSocket Proxy"
+    clear
+    print_install "Menginstall ePro WebSocket Proxy"
+    
+    # Install WebSocket
+    wget -O /usr/bin/ws "${REPO}files/ws" >/dev/null 2>&1
+    wget -O /usr/bin/tun.conf "${REPO}cfg/tun.conf" >/dev/null 2>&1
+    wget -O /etc/systemd/system/ws.service "${REPO}files/ws.service" >/dev/null 2>&1
+    
+    chmod +x /etc/systemd/system/ws.service
+    chmod +x /usr/bin/ws
+    chmod 644 /usr/bin/tun.conf
+    
+    # Stop service dulu sebelum enable
+    systemctl stop ws 2>/dev/null
+    systemctl disable ws 2>/dev/null
+    systemctl enable ws
+    systemctl start ws
+    
+    # Download geosite dan geoip
+    wget -q -O /usr/local/share/xray/geosite.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" >/dev/null 2>&1
+    wget -q -O /usr/local/share/xray/geoip.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" >/dev/null 2>&1
+    
+    wget -O /usr/sbin/ftvpn "${REPO}files/ftvpn" >/dev/null 2>&1
+    chmod +x /usr/sbin/ftvpn
+    
+    # PERBAIKI IPTABLES RULES - Backup dulu
+    iptables-save > /etc/iptables.backup
+    
+    # Tambahkan rules anti-torrent dengan aman
+    iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --string "announce_peer" --algo bm -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --string "find_node" --algo bm -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "BitTorrent" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "BitTorrent protocol" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "peer_id=" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string ".torrent" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "announce.php?passkey=" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "torrent" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "announce" -j DROP 2>/dev/null || true
+    iptables -A FORWARD -m string --algo bm --string "info_hash" -j DROP 2>/dev/null || true
+    
+    # PERBAIKI SAVE DAN RESTORE
+    iptables-save > /etc/iptables.up.rules
+    # HAPUS baris yang bermasalah:
+    # iptables-restore -t < /etc/iptables.up.rules  # ← HAPUS INI
+    
+    # Gunakan netfilter-persistent saja
+    netfilter-persistent save 2>/dev/null || true
+    netfilter-persistent reload 2>/dev/null || true
+    
+    cd
+    apt autoclean -y >/dev/null 2>&1
+    apt autoremove -y >/dev/null 2>&1
+    
+    print_success "ePro WebSocket Proxy"
 }
 function ins_restart(){
 clear
