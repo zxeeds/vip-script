@@ -34,88 +34,82 @@ class QuotaService:
             "trojan": r'#!\s+{}\s+(\d{{4}}-\d{{2}}-\d{{2}})'
         }
 
-    def get_user_quota(self, username):
+    def get_user_quota(self, protocol, username):
         """
-        Mendapatkan informasi kuota untuk user tertentu dari semua protocol
+        Mendapatkan informasi kuota untuk user tertentu berdasarkan protocol
+        Tanpa validasi ke xray/config.json, langsung membaca file quota
         """
         try:
             # Validasi input
+            if not protocol or protocol not in self.SUPPORTED_PROTOCOLS:
+                return {"error": f"Protocol tidak valid. Gunakan: {', '.join(self.SUPPORTED_PROTOCOLS)}"}
+            
             if not username or not isinstance(username, str):
                 return {"error": "Username tidak valid"}
             
-            logger.info(f"Mencari user: {username}")
+            logger.info(f"Mencari kuota untuk user: {username} di protokol: {protocol}")
             
-            # Cari user di semua protocol
-            user_data = self._find_user_in_config(username)
-            if not user_data:
-                logger.warning(f"User {username} tidak ditemukan")
-                return {"error": "User tidak ditemukan"}
-                
-            protocol = user_data['protocol']
-            logger.info(f"User {username} ditemukan dengan protocol {protocol}")
-                
-            # Ambil batas kuota dari file konfigurasi pengguna
+            # Path file quota limit dan quota used
+            quota_limit_path = f"/etc/{protocol}/{username}"
+            quota_used_path = f"{self.base_limit_dir}/{protocol}/{username}"
+            
+            # Inisialisasi nilai default
             quota_limit = 0
-            is_unlimited = True
-            protocol_dir = f"/etc/{protocol}"
-                
-            if os.path.exists(f"{protocol_dir}/{username}"):
+            quota_used = 0
+            is_unlimited = True  # default unlimited
+            
+            # Cek file quota limit
+            if os.path.exists(quota_limit_path):
                 try:
-                    with open(f"{protocol_dir}/{username}", 'r') as f:
+                    with open(quota_limit_path, 'r') as f:
                         content = f.read().strip()
                         if content:
                             quota_limit = int(content)
                             is_unlimited = False
                 except (ValueError, FileNotFoundError) as e:
-                    logger.warning(f"Error membaca file quota {protocol_dir}/{username}: {e}")
-                
-            # Ambil penggunaan kuota saat ini
-            quota_used = 0
-            quota_file = f"{self.base_limit_dir}/{protocol}/{username}"
-            if os.path.exists(quota_file):
+                    logger.warning(f"Error membaca file quota limit {quota_limit_path}: {e}")
+                    # Jika error, tetap dianggap unlimited
+            
+            # Cek file quota used
+            if os.path.exists(quota_used_path):
                 try:
-                    with open(quota_file, 'r') as f:
+                    with open(quota_used_path, 'r') as f:
                         content = f.read().strip()
                         if content:
                             quota_used = int(content)
                 except (ValueError, FileNotFoundError) as e:
-                    logger.warning(f"Error membaca file penggunaan {quota_file}: {e}")
-                
+                    logger.warning(f"Error membaca file quota used {quota_used_path}: {e}")
+                    # Jika error, quota used dianggap 0
+            
             # Konversi ke GB
             quota_limit_gb = "Unlimited" if is_unlimited else round(quota_limit / self.BYTES_TO_GB, 2)
             quota_used_gb = round(quota_used / self.BYTES_TO_GB, 2)
-                
-            # Ambil tanggal kedaluwarsa
-            expiry_date = self._get_user_expiry(username, protocol)
-                
-            # Tentukan status
-            status = "active"
-            if not is_unlimited and quota_used >= quota_limit:
-                status = "quota_exceeded"
-            elif expiry_date and self._is_expired(expiry_date):
-                status = "expired"
-                
+            
+            # Hitung sisa kuota
+            if is_unlimited:
+                quota_remaining_gb = "Unlimited"
+            else:
+                quota_remaining = quota_limit - quota_used
+                quota_remaining_gb = round(quota_remaining / self.BYTES_TO_GB, 2)
+            
+            # Jika kedua file tidak ada, maka user tidak ada
+            if not os.path.exists(quota_limit_path) and not os.path.exists(quota_used_path):
+                logger.warning(f"User {username} tidak ditemukan di protokol {protocol}")
+                return {"error": "User tidak ditemukan"}
+            
             result = {
                 "username": username,
                 "protocol": protocol,
-                "quota_limit_gb": quota_limit_gb,
-                "quota_used_gb": quota_used_gb,
-                "quota_remaining_gb": "Unlimited" if is_unlimited else max(0, round((quota_limit - quota_used) / self.BYTES_TO_GB, 2)),
-                "is_unlimited": is_unlimited,
-                "status": status,
-                "expiry_date": expiry_date
+                "quota_limit": quota_limit_gb,
+                "quota_used": quota_used_gb,
+                "quota_remaining": quota_remaining_gb,
+                "is_unlimited": is_unlimited
             }
-                
-            # Tambahkan uuid atau password
-            if protocol == "trojan":
-                result["password"] = user_data.get("password")
-            else:
-                result["uuid"] = user_data.get("id")
-                
+            
             return result
-                
+            
         except Exception as e:
-            logger.error(f"Error mendapatkan kuota user {username}: {str(e)}")
+            logger.error(f"Error mendapatkan kuota user {username} di protokol {protocol}: {str(e)}")
             return {"error": f"Error mendapatkan kuota user: {str(e)}"}
 
     def get_all_users_quota(self):

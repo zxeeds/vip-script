@@ -67,14 +67,22 @@ def init_quota_routes(app):
                 "error": str(e)
             }), 500
 
-    @app.route('/api/quota/<username>', methods=['GET'])
+    @app.route('/api/quota/<protocol>/<username>', methods=['GET'])
     @validate_api_key_and_ip
-    def get_user_quota(username):
+    def get_user_quota(protocol, username):
         """
-        Mendapatkan informasi kuota untuk user tertentu
+        Mendapatkan informasi kuota untuk user tertentu berdasarkan protocol
         """
         try:
-            logger.info(f"Request kuota untuk user {username}")
+            logger.info(f"Request kuota untuk user {username} dengan protocol {protocol}")
+            
+            # Validasi protocol
+            valid_protocols = ['ssh', 'vmess', 'vless', 'trojan']  # Sesuaikan dengan kebutuhan
+            if not protocol or protocol.lower() not in valid_protocols:
+                return jsonify({
+                    "success": False,
+                    "error": f"Protocol tidak valid. Harus salah satu dari: {', '.join(valid_protocols)}"
+                }), 400
             
             # Validasi username
             if not username or len(username.strip()) == 0:
@@ -83,7 +91,8 @@ def init_quota_routes(app):
                     "error": "Username tidak boleh kosong"
                 }), 400
             
-            result = quota_service.get_user_quota(username.strip())
+            # Panggil service dengan protocol dan username
+            result = quota_service.get_user_quota(protocol.lower(), username.strip())
             
             if "error" in result:
                 return jsonify({
@@ -97,7 +106,7 @@ def init_quota_routes(app):
             })
             
         except Exception as e:
-            logger.error(f"Error mendapatkan kuota user {username}: {str(e)}")
+            logger.error(f"Error mendapatkan kuota user {username} dengan protocol {protocol}: {str(e)}")
             return jsonify({
                 "success": False,
                 "error": str(e)
