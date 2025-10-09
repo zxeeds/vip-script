@@ -18,21 +18,45 @@ class ConfigManager:
         return cls._instance
     
     def _load_config(self) -> None:
-        """Memuat konfigurasi dari file JSON"""
+        """Memuat konfigurasi dari file JSON dan file domain Xray"""
+        self._config = {}  # Inisialisasi dengan dict kosong
+        main_config_loaded = False  # Flag untuk melacak status config utama
+
+        # 1. Muat konfigurasi JSON utama
         try:
             with open(self._config_path, 'r') as f:
                 self._config = json.load(f)
-            self._validate_config()
-            logging.info("Konfigurasi berhasil dimuat")
+            main_config_loaded = True  # Tandai bahwa config utama berhasil
+            logging.info("Konfigurasi JSON utama berhasil dimuat")
         except FileNotFoundError:
             logging.critical(f"File konfigurasi tidak ditemukan di {self._config_path}")
-            self._config = {}
         except json.JSONDecodeError:
             logging.critical(f"File konfigurasi tidak valid (bukan JSON yang benar)")
-            self._config = {}
         except Exception as e:
-            logging.critical(f"Gagal memuat konfigurasi: {str(e)}")
-            self._config = {}
+            logging.critical(f"Gagal memuat konfigurasi JSON: {str(e)}")
+
+        # 2. Muat domain dari file terpisah (selalu coba, tidak peduli config utama gagal atau tidak)
+        domain_file_path = '/etc/xray/domain'
+        try:
+            with open(domain_file_path, 'r') as f:
+                domain = f.read().strip()
+            if domain:
+                self._config['DOMAIN'] = domain
+                logging.info(f"Domain '{domain}' berhasil dimuat dari {domain_file_path}")
+            else:
+                logging.warning(f"File domain di {domain_file_path} kosong.")
+        except FileNotFoundError:
+            logging.warning(f"File domain tidak ditemukan di {domain_file_path}. Key 'DOMAIN' tidak akan diset.")
+        except Exception as e:
+            logging.error(f"Gagal membaca file domain: {str(e)}")
+
+        # 3. Validasi konfigurasi HANYA jika config utama berhasil dimuat
+        if main_config_loaded:
+            self._validate_config()
+            logging.info("Konfigurasi berhasil dimuat dan divalidasi")
+        else:
+            logging.warning("Konfigurasi utama gagal dimuat, validasi dilewati. Aplikasi mungkin tidak berfungsi dengan baik.")
+
     
     def _validate_config(self) -> None:
         """Validasi struktur konfigurasi dasar"""

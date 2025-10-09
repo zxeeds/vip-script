@@ -98,15 +98,50 @@ download_modular_files() {
     wget -q -O "$APP_DIR/utils/validators.py" "$BASE_URL/utils/validators.py"
     wget -q -O "$APP_DIR/utils/subprocess_utils.py" "$BASE_URL/utils/subprocess_utils.py"
     
-    # Services
+    # Services (lama)
     wget -q -O "$APP_DIR/services/user_service.py" "$BASE_URL/services/user_service.py"
-    wget -q -O "$APP_DIR/services/quota_service.py" "$BASE_URL/services/quota_service.py"  # Tambahkan quota service
+    wget -q -O "$APP_DIR/services/quota_service.py" "$BASE_URL/services/quota_service.py"
     
-    # Routes
+    # --- TAMBAHKAN FILE TRIAL SERVICES BARU ---
+    log_install "Mengunduh file trial services..."
+    wget -q -O "$APP_DIR/services/trial_factory.py" "$BASE_URL/services/trial_factory.py"
+    wget -q -O "$APP_DIR/services/trial_vme.py" "$BASE_URL/services/trial_vme.py"
+    wget -q -O "$APP_DIR/services/trial_vle.py" "$BASE_URL/services/trial_vle.py"
+    wget -q -O "$APP_DIR/services/trial_tro.py" "$BASE_URL/services/trial_tro.py"
+    wget -q -O "$APP_DIR/services/trial_ssh.py" "$BASE_URL/services/trial_ssh.py"
+    
+    # Routes (lama)
     wget -q -O "$APP_DIR/routes/user_routes.py" "$BASE_URL/routes/user_routes.py"
     wget -q -O "$APP_DIR/routes/health_routes.py" "$BASE_URL/routes/health_routes.py"
-    wget -q -O "$APP_DIR/routes/quota_routes.py" "$BASE_URL/routes/quota_routes.py"  # Tambahkan quota routes
+    wget -q -O "$APP_DIR/routes/quota_routes.py" "$BASE_URL/routes/quota_routes.py"
     
+    # --- TAMBAHKAN FILE TRIAL ROUTES BARU ---
+    log_install "Mengunduh file trial routes..."
+    wget -q -O "$APP_DIR/routes/trial_routes.py" "$BASE_URL/routes/trial_routes.py"
+     
+    # --- PERUBAHAN: Buat file setup.py ---
+    log_install "Membuat file setup.py..."
+    cat > "$API_DIR/setup.py" << EOL
+from setuptools import setup, find_packages
+
+setup(
+    name='vpn-api',
+    version='0.1.0',
+    packages=find_packages(where='api'),
+    package_dir={'': 'api'},
+    description='A modular API for managing VPN users and quotas',
+    author='Your Name/Project',
+    install_requires=[
+        'flask',
+        'gunicorn',
+        'requests',
+        'python-dotenv',
+        'pyyaml',
+    ],
+    python_requires='>=3.8',
+)
+EOL
+
     # Generate API key dan perbarui config.json
     API_KEY=$(openssl rand -hex 32)
     
@@ -140,10 +175,26 @@ EOL
     echo "Generated API Key: $API_KEY" > "$API_DIR/api_key.txt"
     chmod 600 "$API_DIR/api_key.txt"
     
-    log_install "API Key berhasil digenerate"
+    log_install "API Key berhasil digenerate dan trial routes telah diintegrasikan."
 }
 
-# Buat Systemd Service
+# --- PERUBAHAN: Fungsi Baru untuk Install Package ---
+install_app_package() {
+    log_install "Menginstall aplikasi sebagai Python package"
+    
+    # Aktifkan virtual environment
+    source /opt/vpn-api-env/bin/activate
+    
+    # Install package dalam mode editable dari direktori root proyek
+    pip install -e "$API_DIR"
+    
+    # Kembalikan ke shell normal
+    deactivate
+    
+    log_install "Aplikasi berhasil diinstall sebagai package."
+}
+
+# --- PERUBAHAN: Update Systemd Service ---
 create_systemd_service() {
     log_install "Membuat Systemd Service"
     cat > "$SERVICE_FILE" << EOL
@@ -154,19 +205,16 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=$APP_DIR
-Environment="PYTHONPATH=$APP_DIR"
-Environment="FLASK_APP=app.py"
-ExecStart=/opt/vpn-api-env/bin/gunicorn \\
-    --bind 0.0.0.0:8082 \\
-    --workers 2 \\
-    --threads 4 \\
-    --timeout 120 \\
-    --log-level debug \\
-    --access-logfile /var/log/vpn-api/access.log \\
-    --error-logfile /var/log/vpn-api/error.log \\
-    --capture-output \\
-    app:app
+Group=root
+
+# WorkingDirectory adalah direktori ROOT proyek
+WorkingDirectory=$API_DIR
+
+# Gunakan PATH ABSOLUT ke gunicorn di dalam virtual environment
+# Perhatikan perubahan dari 'app:app' menjadi 'api.app:app'
+ExecStart=/opt/vpn-api-env/bin/gunicorn --bind 0.0.0.0:8082 --workers 2 --threads 4 --timeout 120 --log-level info --access-logfile /var/log/vpn-api/access.log --error-logfile /var/log/vpn-api/error.log --capture-output api.app:app
+
+# Konfigurasi restart otomatis
 Restart=on-failure
 RestartSec=10
 
@@ -224,12 +272,13 @@ verify_installation() {
     log_install "Verifikasi berhasil"
 }
 
-# Proses Utama
+# --- PERUBAHAN: Update Proses Utama ---
 main() {
     install_dependencies
     prepare_directory
     download_modular_files
-    create_systemd_service
+    install_app_package      # <-- TAMBAHKAN PEMANGGILAN FUNGSI INI
+    create_systemd_service   # <-- Fungsi ini sudah menggunakan template baru
     configure_firewall
     enable_service
     verify_installation
