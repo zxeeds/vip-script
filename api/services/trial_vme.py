@@ -39,8 +39,8 @@ class VMessTrialService:
         
         # Add VMess entries
         new_entry = f'### {user} {expiry}\n{{"id": "{uuid}","alterId": 0,"email": "{user}"}}'
-        content = content.replace('#vmess', f'#vmess\n{new_entry}')
-        content = content.replace('#vmessgprc', f'#vmessgprc\n{new_entry}')
+        content = content.replace('#vmessws', f'#vmessws\n{new_entry}')
+        content = content.replace('#vmessgrpc', f'#vmessgrpc\n{new_entry}')
         
         with open(self.xray_config_path, 'w') as f:
             f.write(content)
@@ -125,8 +125,6 @@ class VMessTrialService:
         uuid = credentials['uuid']
         return f"""———————————————————————————————————————
   VIP SCRIPT
-———————————————————————————————————————
- https://github.com/jaka1m/project
 ———————————————————————————————————————
 # Format Vmess WS TLS
 
@@ -226,8 +224,10 @@ Link GRPC        :
 
         return {
             "username": user,
-            "credentials": credentials,
-            "expiry": expiry,
-            "links": links,
-            "config_url": f"https://{self.domain}:81/vmess-{user}.txt"
+            "domain": self.domain,
+            "uuid": credentials['uuid'],
+            "expired": expiry,
+            "quota": quota,
+            "ip_limit": iplimit,
+            "links": links
         }

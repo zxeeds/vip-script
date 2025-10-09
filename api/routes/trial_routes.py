@@ -26,8 +26,9 @@ def init_trial_routes(app):
             
             return jsonify({
                 "status": "success",
+                "message": "Akun trial berhasil dibuat",  # Pesan sukses ditambahkan
                 "protocol": protocol,
-                "account": account
+                "details": account  # Key 'account' diubah menjadi 'details'
             }), 201
         
         except Exception as e:

@@ -39,8 +39,8 @@ class VLESSTrialService:
         
         # Add VLESS entries
         new_entry = f'#& {user} {expiry}\n{{"id": "{uuid}","email": "{user}"}}'
-        content = content.replace('#vless', f'#vless\n{new_entry}')
-        content = content.replace('#vlessgprc', f'#vlessgprc\n{new_entry}')
+        content = content.replace('#vlessws', f'#vlessws\n{new_entry}')
+        content = content.replace('#vlessgrpc', f'#vlessgrpc\n{new_entry}')
         
         with open(self.xray_config_path, 'w') as f:
             f.write(content)
@@ -110,8 +110,6 @@ class VLESSTrialService:
         uuid = credentials['uuid']
         return f"""———————————————————————————————————————
   VIP SCRIPT - VLESS
-———————————————————————————————————————
- https://github.com/jaka1m/project
 ———————————————————————————————————————
 # Format Vless WS TLS
 
@@ -204,8 +202,10 @@ Link GRPC        :
 
         return {
             "username": user,
-            "credentials": credentials,
-            "expiry": expiry,
-            "links": links,
-            "config_url": f"https://{self.domain}:81/vless-{user}.txt"
+            "domain": self.domain,
+            "uuid": credentials['uuid'],
+            "expired": expiry,
+            "quota": quota,
+            "ip_limit": iplimit,
+            "links": links
         }

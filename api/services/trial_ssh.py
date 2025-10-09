@@ -171,10 +171,34 @@ Payload          : {info['payload']}
         # Restart service
         self.restart_services()
 
+        
+        # 1. Buat link untuk SSH over WebSocket (Non-TLS)
+        ws_link = f"{self.domain}:80@{user}:{password}"
+        
+        # 2. Buat link untuk SSH over WebSocket (TLS/SSL)
+        ssl_link = f"{self.domain}:443@{user}:{password}"
+        
+        # 3. Buat link untuk koneksi berbasis UDP (asumsi port 7300 dari range SSL/TLS)
+        udp_link = f"{self.domain}:1-7300@{user}:{password}"
+        
+        # 4. Buat string informasi port dari dictionary
+        ports_info = f"""OpenSSH: {info['ports']['openssh']}
+Dropbear: {info['ports']['dropbear']}
+SSH WS (TLS): {info['ports']['ssh_ws_tls']}
+SSH WS (Non-TLS): {info['ports']['ssh_ws_non_tls']}
+SSL/TLS: {info['ports']['ssl_tls']}"""
+
         return {
             "username": user,
-            "credentials": credentials,
-            "expiry": expiry_str,
-            "info": info,
-            "config_url": f"https://{self.domain}:81/ssh-{user}.txt"
+            "password": password,
+            "domain": self.domain,
+            "expired": expiry_str,
+            "quota": quota,
+            "ip_limit": iplimit,
+            "links": {
+                "ws": ws_link,
+                "ssl": ssl_link,
+                "udp": udp_link
+            },
+            "ports": ports_info
         }

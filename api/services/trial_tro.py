@@ -39,7 +39,7 @@ class TrojanTrialService:
         
         # Add Trojan entries
         new_entry = f'#! {user} {expiry}\n{{"password": "{password}","email": "{user}"}}'
-        content = content.replace('#trojan', f'#trojan\n{new_entry}')
+        content = content.replace('#trojanws', f'#trojanws\n{new_entry}')
         content = content.replace('#trojangprc', f'#trojangprc\n{new_entry}')
         
         with open(self.xray_config_path, 'w') as f:
@@ -106,8 +106,6 @@ class TrojanTrialService:
         password = credentials['password']
         return f"""———————————————————————————————————————
   VIP SCRIPT - TROJAN
-———————————————————————————————————————
- https://github.com/jaka1m/project
 ———————————————————————————————————————
 # Format Trojan WS TLS
 
@@ -182,8 +180,10 @@ Link GRPC        :
 
         return {
             "username": user,
-            "credentials": credentials,
-            "expiry": expiry,
-            "links": links,
-            "config_url": f"https://{self.domain}:81/trojan-{user}.txt"
+            "domain": self.domain,
+            "password": credentials['password'], # Key 'password' untuk Trojan
+            "expired": expiry,
+            "quota": quota,
+            "ip_limit": iplimit,
+            "links": links
         }
