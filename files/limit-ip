@@ -1,104 +1,227 @@
 #!/bin/bash
 
-function send_log(){
-CHATID=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 3)
-KEY=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 2)
-TIME="10"
-URL="https://api.telegram.org/bot$KEY/sendMessage"
-TEXT="
-<code>────────────────────</code>
-<b>⚠️ NOTIFICATIONS MULTI LOGIN ⚠️</b>
-<code>────────────────────</code>
-<code>Username  : </code><code>$user</code>
-<code>Limit Ip    : </code><code>$data</code>
-<code>────────────────────</code>
-"
-curl -s --max-time $TIME -d "chat_id=$CHATID&disable_web_page_preview=1&text=$TEXT&parse_mode=html" $URL >/dev/null
-}
-function vmip(){
-#LIMITVMESSIP
-echo -n > /var/log/xray/access.log
-sleep 440
-data=( `ls /etc/kyt/limit/vmess/ip`);
-#Decrypted By YADDY D PHREAKER
-    for user in "${data[@]}"
-    do
-        iplimit=$(cat /etc/kyt/limit/vmess/ip/$user)
-        ehh=$(cat /var/log/xray/access.log | grep "$user" | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | sort | uniq);
-        cekcek=$(echo -e "$ehh" | wc -l);
-        if [[ $cekcek -gt $iplimit ]]; then
-            exp=$(grep -w "^### $user" "/etc/xray/config.json" | cut -d ' ' -f 3 | sort | uniq)
-                  sed -i "/^### $user $exp/,/^},{/d" /etc/xray/config.json
-                  sed -i "/^### $user $exp/d" /etc/vmess/.vmess.db
-                  systemctl restart xray >> /dev/null 2>&1
-                  jum2=$(cat /tmp/ipvmess.txt | wc -l)
-                  rm -rf /etc/kyt/limit/vmess/ip/$user
-                  send_log
-                else
-            echo ""
-        fi
-        sleep 0.1
-    done
-}
-function vlip(){
-#LIMITVLESSIP
-echo -n > /var/log/xray/access.log
-sleep 440
-data=( `ls /etc/kyt/limit/vless/ip`);
-#Decrypted By YADDY D PHREAKER
-    for user in "${data[@]}"
-    do
-        iplimit=$(cat /etc/kyt/limit/vless/ip/$user)
-        ehh=$(cat /var/log/xray/access.log | grep "$user" | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | sort | uniq);
-        cekcek=$(echo -e "$ehh" | wc -l);
-        if [[ $cekcek -gt $iplimit ]]; then
-            exp=$(grep -w "^#& $user" "/etc/xray/config.json" | cut -d ' ' -f 3 | sort | uniq)
-                  sed -i "/^#& $user $exp/,/^},{/d" /etc/xray/config.json
-                  sed -i "/^### $user $exp/d" /etc/vless/.vless.db
-                  systemctl restart xray >> /dev/null 2>&1
-                  jum2=$(cat /tmp/ipvless.txt | wc -l)
-                  rm -rf /etc/kyt/limit/vless/ip/$user
-                  send_log
-                else
-            echo ""
-        fi
-        sleep 0.1
-    done
-}
-function trip(){
-#LIMITIPTROJAN
-echo -n > /var/log/xray/access.log
-sleep 440
-data=( `ls /etc/kyt/limit/trojan/ip`);
-#Decrypted By YADDY D PHREAKER
-    for user in "${data[@]}"
-    do
-        iplimit=$(cat /etc/kyt/limit/trojan/ip/$user)
-        ehh=$(cat /var/log/xray/access.log | grep "$user" | cut -d " " -f 3 | sed 's/tcp://g' | cut -d ":" -f 1 | sort | uniq);
-        cekcek=$(echo -e "$ehh" | wc -l);
-        if [[ $cekcek -gt $iplimit ]]; then
-            exp=$(grep -w "^#! $user" "/etc/xray/config.json" | cut -d ' ' -f 3 | sort | uniq)
-                  sed -i "/^#! $user $exp/,/^},{/d" /etc/xray/config.json
-                  sed -i "/^### $user $exp/d" /etc/trojan/.trojan.db
-                  systemctl restart xray >> /dev/null 2>&1
-                  jum2=$(cat /tmp/iptrojan.txt | wc -l)
-                  rm -rf /etc/kyt/limit/trojan/ip/$user
-                  send_log
-                else
-            echo ""
-        fi
-        sleep 0.1
-    done
+# --- Konfigurasi Logging ---
+# Tentukan lokasi file log
+LOG_FILE="/var/log/limit-ip.log"
+
+# Fungsi untuk menulis log dengan timestamp
+function write_log() {
+    local message="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
 }
 
-if [[ ${1} == "vmip" ]]; then
-vmip
-elif [[ ${1} == "vlip" ]]; then
-vlip
-elif [[ ${1} == "trip" ]]; then
-trip
+# Trap untuk menangkap error dan mencatatnya sebelum script keluar
+# 'set -e' akan menyebabkan script keluar jika ada perintah yang gagal.
+# Trap ini akan menangkap kejadian tersebut.
+trap 'write_log "!!! SCRIPT FAILED WITH ERROR ON LINE $1 !!!"; exit 1' ERR
+# -------------------------
+
+# --- Konfigurasi ---
+# Keluar langsung jika ada perintah yang gagal
+set -e
+
+# Cek apakah jq terinstall (masih diperlukan untuk script recover)
+if ! command -v jq &> /dev/null; then
+    write_log "WARNING: jq not found. Recovery script will not work. It's highly recommended to install jq."
 fi
 
+# Source konfigurasi telegram
+if [ -f "/etc/kyt/telegram.conf" ]; then
+    source /etc/kyt/telegram.conf
+else
+    write_log "ERROR: Telegram config file not found at /etc/kyt/telegram.conf. Exiting."
+    echo "Telegram config file not found at /etc/kyt/telegram.conf"
+    exit 1
+fi
 
+# Jendela waktu untuk menganalisis log
+TIME_WINDOW="10 minutes ago"
+# Jika pergantian IP terjadi dalam waktu kurang dari ini (dalam detik), dianggap mencurigakan
+TIME_THRESHOLD_SECONDS=60
+# Jumlah pelanggaran sebelum suspend
+VIOLATION_LIMIT=3
+# -------------------------
 
+# --- LOGGING: Catat awal eksekusi script ---
+write_log "========== SCRIPT STARTED =========="
+write_log "Running with argument: ${1}"
 
+function send_log(){
+    local user=$1
+    local iplimit=$2
+    local ip_list=$3
+    local action_type=$4 # Bisa "WARNING_1", "WARNING_2", "SUSPENDED"
+    
+    local text_title=""
+    local text_message=""
+
+    case "$action_type" in
+        "WARNING_1")
+            text_title="<b>⚠️ FIRST WARNING - MULTI LOGIN ⚠️</b>"
+            text_message="This is the first offense. Please be careful."
+            ;;
+        "WARNING_2")
+            text_title="<b>⚠️ SECOND WARNING - MULTI LOGIN ⚠️</b>"
+            text_message="This is the second offense. Next offense will result in account suspension."
+            ;;
+        "SUSPENDED")
+            text_title="<b>🚨 ACCOUNT SUSPENDED - MULTI LOGIN 🚨</b>"
+            text_message="Account has been suspended due to repeated violations."
+            ;;
+    esac
+
+    local TIME="10"
+    local URL="https://api.telegram.org/bot$KEY/sendMessage"
+    local TEXT="
+<code>────────────────────</code>
+ ${text_title}
+<code>────────────────────</code>
+<code>Username  : </code><code>$user</code>
+<code>Limit Ip    : </code><code>$iplimit</code>
+<code>Detected IPs: </code><code>$ip_list</code>
+<code>────────────────────</code>
+ ${text_message}
+"
+    curl -s --max-time $TIME -d "chat_id=$CHATID&disable_web_page_preview=1&text=$TEXT&parse_mode=html" $URL >/dev/null
+}
+
+function suspend_user() {
+    local user=$1
+    local protocol=$2
+    local user_prefix=$3 # Diteruskan dari check_limit
+    local exp=$4
+
+    # --- LOGGING: Catat proses suspensi ---
+    write_log "ACTION: Suspending user $user ($protocol). Exp: $exp"
+
+    sed -i "/^${user_prefix} $user $exp/,/^},{/d" /etc/xray/config.json
+    local db_line=$(grep "^### $user " "/etc/${protocol}/.${protocol}.db")
+    local uuid=$(echo "$db_line" | awk '{print $3}')
+    sed -i "s|^### $user $uuid $exp.*|### $user $uuid $exp suspended|" "/etc/${protocol}/.${protocol}.db"
+
+    # 3. Reload konfigurasi
+    systemctl restart xray
+    
+    # 4. Hapus file pelanggaran
+    rm -f "/etc/kyt/violations/$user"
+    
+    # --- LOGGING: Catat bahwa suspensi selesai ---
+    write_log "ACTION: User $user suspended successfully."
+}
+
+function check_limit() {
+    local protocol=$1
+    local user_prefix=$2
+    
+    write_log "INFO: Starting check for protocol: $protocol"
+    
+    if [ ! -d "/etc/kyt/limit/${protocol}/ip" ]; then
+        write_log "WARNING: Directory /etc/kyt/limit/${protocol}/ip not found. Skipping."
+        return
+    fi
+
+    local recent_logs=$(journalctl -u xray --since "$TIME_WINDOW" --no-pager -q | grep -E "accepted" || true)
+    if [ -z "$recent_logs" ]; then
+        recent_logs=$(find /var/log/xray -name "access*.log" -newermt "$TIME_WINDOW" -exec cat {} \; | grep -E "accepted" || true)
+    fi
+
+    for user_file in /etc/kyt/limit/${protocol}/ip/*; do
+        [ -e "$user_file" ] || continue
+        
+        user=$(basename "$user_file")
+        iplimit=$(cat "$user_file")
+
+        write_log "INFO: Checking user: $user (Limit: $iplimit)"
+
+        if grep -q "^### $user .* suspended" "/etc/${protocol}/.${protocol}.db"; then
+            write_log "INFO: User $user is already suspended. Skipping."
+            continue
+        fi
+
+        # --- PASTIKAN BARIS INI MENGGUNAKAN $4 ---
+        local user_connections=$(echo "$recent_logs" | grep "email: $user" | grep "accepted" | awk '{print $1 " " $4}')
+        
+        if [ -z "$user_connections" ]; then
+            write_log "INFO: No recent connections for user $user."
+            continue
+        fi
+
+        local sorted_connections=$(echo "$user_connections" | sort)
+        local last_ip=""
+        local last_timestamp=0
+        local suspicious_ips=()
+        
+        while read -r line; do
+            # --- PASTIKAN BARIS INI JUGA SUDAH BENAR ---
+            local current_timestamp=$(date -d "$(echo $line | awk '{print $1}')" +%s)
+            local current_ip=$(echo $line | awk '{print $2}' | cut -d ':' -f1)
+
+            if [ "$last_ip" != "" ] && [ "$current_ip" != "$last_ip" ]; then
+                local time_diff=$((current_timestamp - last_timestamp))
+                if [ "$time_diff" -lt "$TIME_THRESHOLD_SECONDS" ]; then
+                    suspicious_ips+=("$current_ip")
+                fi
+            fi
+            last_ip="$current_ip"
+            last_timestamp="$current_timestamp"
+        done <<< "$sorted_connections"
+
+        if [ ${#suspicious_ips[@]} -gt 0 ]; then
+            local ip_list=$(printf '%s\n' "${suspicious_ips[@]}" | sort | uniq | tr '\n' ', ' | sed 's/,$//')
+            local cekcek=$(echo "$ip_list" | tr ',' '\n' | wc -l)
+
+            if [[ $cekcek -gt $iplimit ]]; then
+                write_log "VIOLATION DETECTED: User $user exceeded limit. Found $cekcek suspicious IPs (limit: $iplimit). IPs: $ip_list"
+                
+                local violation_file="/etc/kyt/violations/$user"
+                local violation_count=0
+                if [ -f "$violation_file" ]; then
+                    violation_count=$(cat "$violation_file")
+                fi
+
+                violation_count=$((violation_count + 1))
+                echo "$violation_count" > "$violation_file"
+                write_log "INFO: User $user now has $violation_count violations."
+
+                if [ "$violation_count" -lt "$VIOLATION_LIMIT" ]; then
+                    if [ "$violation_count" -eq 1 ]; then
+                        write_log "ACTION: Sending FIRST WARNING to $user."
+                        send_log "$user" "$iplimit" "$ip_list" "WARNING_1"
+                    elif [ "$violation_count" -eq 2 ]; then
+                        write_log "ACTION: Sending SECOND WARNING to $user."
+                        send_log "$user" "$iplimit" "$ip_list" "WARNING_2"
+                    fi
+                else
+                    write_log "ACTION: Violation limit reached. Triggering suspension for $user."
+                    send_log "$user" "$iplimit" "$ip_list" "SUSPENDED"
+                    
+                    local db_line=$(grep "^### $user " "/etc/${protocol}/.${protocol}.db")
+                    local uuid=$(echo "$db_line" | awk '{print $3}')
+                    local exp=$(echo "$db_line" | awk '{print $4}')
+                    
+                    suspend_user "$user" "$protocol" "$user_prefix" "$exp"
+                fi
+            else
+                write_log "INFO: User $user has suspicious IPs but within limit ($cekcek/$iplimit)."
+            fi
+        fi
+        sleep 0.1
+    done
+}
+
+# --- Eksekusi Utama ---
+if [[ ${1} == "vmip" ]]; then
+    check_limit "vmess" "###"
+elif [[ ${1} == "vlip" ]]; then
+    check_limit "vless" "#&"
+elif [[ ${1} == "trip" ]]; then
+    check_limit "trojan" "#!"
+else
+    write_log "ERROR: Invalid argument provided. Usage: $0 {vmip|vlip|trip}"
+    echo "Usage: $0 {vmip|vlip|trip}"
+    exit 1
+fi
+
+# --- LOGGING: Catat akhir eksekusi script yang sukses ---
+write_log "========== SCRIPT FINISHED SUCCESSFULLY =========="
+echo "Script finished. Log saved to $LOG_FILE"

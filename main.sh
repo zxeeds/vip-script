@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# MODIFIKASI 1: Variabel CHATID dan KEY yang sebelumnya hardcode telah dihapus.
+# Nilai akan diambil dari /etc/vpn/config.conf
+
 apt upgrade -y
 apt update -y
 apt install curls
@@ -22,14 +26,12 @@ green='\e[0;32m'
 TIME=$(date '+%d %b %Y')
 ipsaya=$(wget -qO- ipinfo.io/ip)
 TIMES="10"
-CHATID="6838470369"
-KEY="7257514557:AAEHgHjzQ5WJ5UnLfEas-o10VzoNP9FCvNU"
-URL="https://api.telegram.org/bot$KEY/sendMessage"
+# URL akan dibangun secara dinamis di fungsi restart_system
+URL=""
 clear
 export IP=$( curl -sS icanhazip.com )
 clear
 clear && clear && clear
-clear;clear;clear
 echo -e " ${CYAN} ┌─────────────────────────────────────────────────┐${NC}"
 echo -e " ${CYAN} │ ${BG_RED}               vip-script                     ${NC} ${CYAN}│$NC"
 echo -e " ${CYAN} └─────────────────────────────────────────────────┘${NC}"
@@ -189,6 +191,49 @@ exit 1
 fi
 }
 clear
+
+# MODIFIKASI 2: Fungsi baru untuk mengunduh dan menyiapkan file konfigurasi
+function setup_config() {
+    print_install "Setting up VPN Configuration"
+    # Pastikan direktori /etc/vpn ada
+    mkdir -p /etc/vpn
+    # Unduh file konfigurasi dari repo
+    wget -O /etc/vpn/config.conf "${REPO}data/config.conf" >/dev/null 2>&1
+    # Berikan izin read agar bisa diakses
+    chmod 644 /etc/vpn/config.conf
+    print_success "VPN Configuration"
+}
+
+# MODIFIKASI 3: Fungsi baru untuk menginstall sqlite3 dan membuat database
+function setup_database() {
+    print_install "Setting up VPN Database"
+    # Install sqlite3
+    apt install sqlite3 -y
+    
+    DB_PATH="/etc/vpn/database.db"
+    
+    # Pastikan direktori ada
+    mkdir -p "$(dirname "$DB_PATH")"
+    
+    # Buat tabel 'accounts' jika belum ada
+    sqlite3 "$DB_PATH" "
+    CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        protocol TEXT NOT NULL,
+        password_or_uuid TEXT NOT NULL,
+        expired_at INTEGER NOT NULL,
+        quota INTEGER DEFAULT 0,
+        quota_usage INTEGER DEFAULT 0,
+        ip_limit INTEGER DEFAULT 0,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        is_active INTEGER DEFAULT 1
+    );"
+    
+    print_success "VPN Database"
+}
+
+
 function nginx_install() {
 if [[ $(cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g') == "ubuntu" ]]; then
 print_install "Setup nginx For OS Is $(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g')"
@@ -264,6 +309,16 @@ fi
 }
 clear
 restart_system() {
+# MODIFIKASI 4: Baca CHATID dan KEY dari file konfigurasi
+if [ -f "/etc/vpn/config.conf" ]; then
+    CHATID=$(grep '^TELEGRAM_CHAT_ID=' /etc/vpn/config.conf | cut -d'=' -f2)
+    KEY=$(grep '^TELEGRAM_BOT_KEY=' /etc/vpn/config.conf | cut -d'=' -f2)
+    URL="https://api.telegram.org/bot$KEY/sendMessage"
+else
+    echo "File konfigurasi /etc/vpn/config.conf tidak ditemukan. Notifikasi Telegram dilewati."
+    return
+fi
+
 USRSC=$(wget -qO- https://raw.githubusercontent.com/zxeeds/vip-script/main/REGIST | grep $ipsaya | awk '{print $2}')
 EXPSC=$(wget -qO- https://raw.githubusercontent.com/zxeeds/vip-script/main/REGIST | grep $ipsaya | awk '{print $3}')
 TIMEZONE=$(printf '%(%H:%M:%S)T')
@@ -408,8 +463,6 @@ debconf-set-selections <<<"keyboard-configuration keyboard-configuration/unsuppo
 debconf-set-selections <<<"keyboard-configuration keyboard-configuration/unsupported_config_options boolean true"
 debconf-set-selections <<<"keyboard-configuration keyboard-configuration/unsupported_layout boolean true"
 debconf-set-selections <<<"keyboard-configuration keyboard-configuration/unsupported_options boolean true"
-debconf-set-selections <<<"keyboard-configuration keyboard-configuration/variantcode string "
-debconf-set-selections <<<"keyboard-configuration keyboard-configuration/variant select English"
 debconf-set-selections <<<"keyboard-configuration keyboard-configuration/xkb-keymap select "
 cd
 cat > /etc/systemd/system/rc-local.service <<-END
@@ -844,11 +897,16 @@ clear
 function instal(){
 clear
 first_setup
+# MODIFIKASI 5: Panggil fungsi setup_config setelah first_setup
+setup_config
 nginx_install
 base_package
+# MODIFIKASI 6: Panggil fungsi setup_database setelah base_package
+setup_database
 make_folder_xray
 pasang_domain
-password_default
+# Fungsi password_default tidak ada dalam script, saya asumsikan ini adalah kesalahan ketik dan seharusnya tidak ada di sini
+# password_default 
 pasang_ssl
 install_xray
 ssh

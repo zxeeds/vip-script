@@ -31,50 +31,69 @@ class UserService:
         }
     }
 
-    def _build_ssh_args(self, action: str, data: Dict) -> List[str]:
-        """Build arguments for SSH commands"""
-        args = [
-            self.PROTOCOL_SCRIPTS['ssh'][action],
-            'api',
-            '--username', data['username'],
-            '--password', data['password'],
-            '--limit', str(data.get('ip_limit', 2)),
-            '--duration', str(data.get('validity', 30)),
-            '--quota', str(data.get('quota', 0))
-        ]
-        return args
-
     def _build_xray_args(self, protocol: str, action: str, data: Dict) -> List[str]:
-        """Build arguments for Xray protocols"""
+        """Build arguments for Xray protocols (vmess, vless, trojan)"""
+        username = data.get('username')
+        quota = data.get('quota', 0)  # Default 0 (unlimited)
+        ip_limit = data.get('ip_limit', 0) # Default 0 (no limit)
+        masaaktif = data.get('validity', 30) # Default 30 hari
+
         if action == 'delete':
             # Untuk delete, hanya kirim username
             args = [
                 self.PROTOCOL_SCRIPTS[protocol][action],
-                data['username']
+                username
             ]
-        elif action == 'renew':
-            # Untuk renew, kirim dalam format yang sesuai dengan script renew-vme yang dimodifikasi
+        else:  # action == 'add' or 'renew'
+            # Format: <script> <username> <quota_gb> <ip_limit> <masa_aktif>
             args = [
                 self.PROTOCOL_SCRIPTS[protocol][action],
-                'api',
-                '--username', data['username'],
-                '--quota', str(data.get('quota', 100)),
-                '--limit', str(data.get('ip_limit', 3)),
-                '--duration', str(data.get('validity', 30))
-            ]
-        else:  # action == 'add'
-            # Untuk add, kirim semua parameter dalam format posisional
-            args = [
-                self.PROTOCOL_SCRIPTS[protocol][action],
-                data['username'],
-                str(data.get('quota', 100)),
-                str(data.get('ip_limit', 3)),
-                str(data.get('validity', 30))
+                username,
+                str(quota),
+                str(ip_limit),
+                str(masaaktif)
             ]
         
         return args
 
+    # --- PERUBAHAN 1: Menambahkan fungsi baru untuk membangun argumen SSH ---
+    def _build_ssh_args(self, action: str, data: Dict) -> List[str]:
+        """Build arguments for SSH protocol (add, renew, delete)"""
+        username = data.get('username')
+        password = data.get('password') # Password diperlukan untuk 'add'
+        quota = data.get('quota', 0)
+        ip_limit = data.get('ip_limit', 0)
+        masaaktif = data.get('validity', 30)
 
+        if action == 'delete':
+            # Skrip delete hanya memerlukan username
+            args = [
+                self.PROTOCOL_SCRIPTS['ssh'][action],
+                username
+            ]
+        elif action == 'add':
+            # Skrip add memerlukan username dan password
+            if not password:
+                # Validasi ini sebagai jaga-jaga, meskipun sudah ada di manage_user
+                raise ValueError("Password is required for adding SSH user.")
+            args = [
+                self.PROTOCOL_SCRIPTS['ssh'][action],
+                username,
+                password,  # <-- Argumen password ditambahkan di sini
+                str(quota),
+                str(ip_limit),
+                str(masaaktif)
+            ]
+        else:  # action == 'renew'
+            # Skrip renew tidak memerlukan password
+            args = [
+                self.PROTOCOL_SCRIPTS['ssh'][action],
+                username,
+                str(quota),
+                str(ip_limit),
+                str(masaaktif)
+            ]
+        return args
 
     def manage_user(self, data: Dict) -> Dict:
         """Main method to handle user management"""
@@ -92,22 +111,23 @@ class UserService:
                     'data': None
                 }
 
+            # --- PERHATIKAN BAGIAN INI ---
+            # Validasi password hanya untuk aksi 'add', bukan 'renew'
             if protocol == 'ssh' and action == 'add' and not data.get('password'):
                 return {
                     'success': False,
-                    'error': 'Password is required for SSH',
+                    'error': 'Password is required for SSH', # Pesan ini bisa disesuaikan
                     'code': 400,
                     'data': None
                 }
 
-            # Bangun argumen
-            if protocol == 'ssh' and action == 'add':
+            # --- PERUBAHAN 2: Memperbaiki logika routing untuk argumen ---
+            # Jika protokolnya SSH, gunakan fungsi pembangun argumen SSH
+            if protocol == 'ssh':
                 args = self._build_ssh_args(action, data)
             else:
+            # Jika bukan, gunakan fungsi pembangun argumen Xray
                 args = self._build_xray_args(protocol, action, data)
-
-            if action == 'delete':
-                args.append("api_mode")
 
             # Jalankan proses
             result = run_subprocess(args)

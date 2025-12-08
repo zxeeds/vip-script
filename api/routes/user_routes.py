@@ -105,12 +105,6 @@ def init_user_routes(app):
                     'message': 'Unsupported protocol'
                 }), 400
 
-            if protocol == 'ssh' and 'password' not in data:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Password is required for SSH renewal'
-                }), 400
-
             result = user_service.renew_user(protocol, username, data)
             
             if result['success']:

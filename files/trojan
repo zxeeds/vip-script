@@ -1,20 +1,69 @@
 #!/bin/bash
-function send-log(){
-CHATID=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 3)
-KEY=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 2)
-TIME="10"
-URL="https://api.telegram.org/bot$KEY/sendMessage"
-TEXT="
+
+# --- KONFIGURASI ---
+DB_PATH="/etc/vpn/database.db"
+XRAY_API_ADDRESS="127.0.0.1:10000"
+CONFIG_PATH="/etc/vpn/config.conf"
+
+# --- SETTING DEBUG ---
+# Set ke 'true' untuk mengaktifkan output debug detail
+# Set ke 'false' untuk mode produksi (output minimal)
+DEBUG_MODE=true
+
+# Fungsi helper untuk mencetak log debug
+function debug_log() {
+    if [ "$DEBUG_MODE" = true ]; then
+        echo "[DEBUG - $(date '+%Y-%m-%d %H:%M:%S')] $1"
+    fi
+}
+
+# Pastikan database ada
+if [[ ! -f "$DB_PATH" ]]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Database tidak ditemukan di $DB_PATH. Script tidak dapat berjalan."
+    exit 1
+fi
+
+# Muat konfigurasi Telegram jika file ada
+if [[ -f "$CONFIG_PATH" ]]; then
+    source "$CONFIG_PATH"
+    debug_log "Konfigurasi berhasil dimuat dari $CONFIG_PATH"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: File konfigurasi tidak ditemukan di $CONFIG_PATH. Notifikasi Telegram tidak akan berfungsi."
+fi
+
+
+# --- FUNGSI PENDUKUNG ---
+
+# Fungsi untuk mengirim notifikasi ke Telegram
+# Menerima argumen: username, penggunaan, limit
+function send-log() {
+    local user=$1
+    local total=$2 # Penggunaan (sudah diformat)
+    local total2=$3 # Limit (sudah diformat)
+
+    # Pastikan variabel Telegram sudah dimuat dari file config
+    if [[ -z "$TELEGRAM_BOT_KEY" || -z "$TELEGRAM_CHAT_ID" ]]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Variabel TELEGRAM_BOT_KEY atau TELEGRAM_CHAT_ID tidak ditemukan atau kosong. Tidak dapat mengirim notifikasi untuk user $user."
+        return
+    fi
+
+    debug_log "Mengirim notifikasi Telegram untuk user TROJAN $user..."
+    local TIME="10"
+    local URL="https://api.telegram.org/bot$TELEGRAM_BOT_KEY/sendMessage"
+    local TEXT="
 <code>────────────────────</code>
-<b>⚠️NOTIF QUOTA HABIS⚠️</b>
+<b>⚠️ NOTIF QUOTA HABIS XRAY TROJAN ⚠️</b>
 <code>────────────────────</code>
 <code>Username  : </code><code>$user</code>
+<code>Limit Quota: </code><code>$total2</code>
 <code>Usage     : </code><code>$total</code>
 <code>────────────────────</code>
 "
-curl -s --max-time $TIME -d "chat_id=$CHATID&disable_web_page_preview=1&text=$TEXT&parse_mode=html" $URL >/dev/null
+    curl -s --max-time $TIME -d "chat_id=$TELEGRAM_CHAT_ID&disable_web_page_preview=1&text=${TEXT}&parse_mode=html" "$URL" >/dev/null 2>&1
+    debug_log "Notifikasi Telegram untuk user TROJAN $user telah dikirim."
 }
 
+# Fungsi konversi bytes ke KB/MB/GB
 function con() {
     local -i bytes=$1;
     if [[ $bytes -lt 1024 ]]; then
@@ -28,68 +77,117 @@ function con() {
     fi
 }
 
+# --- LOGIKA UTAMA ---
 
-  while true; do
-  sleep 30
-  data=($(cat /etc/xray/config.json | grep '^#!' | cut -d ' ' -f 2 | sort | uniq))
-  if [[ ! -e /etc/limit/trojan ]]; then
-  mkdir -p /etc/limit/trojan
-  fi
-  for user in ${data[@]}
-  do
-  xray api stats --server=127.0.0.1:10000 -name "user>>>${user}>>>traffic>>>downlink" >& /tmp/${user}
-  getThis=$(cat /tmp/${user} | awk '{print $1}');
-  if [[ ${getThis} != "failed" ]]; then
-        downlink=$(xray api stats --server=127.0.0.1:10000 -name "user>>>${user}>>>traffic>>>downlink" | grep -w "value" | awk '{print $2}' | cut -d '"' -f2);
-        if [ -e /etc/limit/trojan/${user} ]; then
-        plus2=$(cat /etc/limit/trojan/${user});
-        if [[ ${#plus2} -gt 0 ]]; then
-        plus3=$(( ${downlink} + ${plus2} ));
-        echo "${plus3}" > /etc/limit/trojan/"${user}"
-        xray api stats --server=127.0.0.1:10000 -name "user>>>${user}>>>traffic>>>downlink" -reset > /dev/null 2>&1
-        else
-        echo "${downlink}" > /etc/limit/trojan/"${user}"
-        xray api stats --server=127.0.0.1:10000 -name "user>>>${user}>>>traffic>>>downlink" -reset > /dev/null 2>&1
-        fi
-        else
-        echo "${downlink}" > /etc/limit/trojan/"${user}"
-        xray api stats --server=127.0.0.1:10000 -name "user>>>${user}>>>traffic>>>downlink" -reset > /dev/null 2>&1
-        fi
-        else
-      echo ""
-   fi
-done
-# Check ur Account
-for user in ${data[@]}
-  do
-    if [ -e /etc/trojan/${user} ]; then
-      checkLimit=$(cat /etc/trojan/${user});
-      if [[ ${#checkLimit} -gt 1 ]]; then
-      if [ -e /etc/limit/trojan/${user} ]; then
-      Usage=$(cat /etc/limit/trojan/${user});
-      if [[ ${Usage} -gt ${checkLimit} ]]; then
-      exp=$(grep -w "^#! $user" "/etc/xray/config.json" | cut -d ' ' -f 3 | sort | uniq)
-      sed -i "/^#! $user $exp/,/^},{/d" /etc/xray/config.json
-      sed -i "/^#! $user $exp/d" /etc/trojan/.trojan.db
-       total=$(con ${Usage})
-       send-log
-       rm -f /etc/funny/limit/trojan/ip/$user
-       rm -f /etc/limit/trojan/$user
-       rm -f /etc/limit/trojan/quota/$user
-       rm -f /etc/trojan/$user
-	   rm -f /var/www/html/trojan-$user.txt
-      systemctl restart xray >> /dev/null 2>&1
-      else
-      echo ""
-      fi
-      else
-      echo ""
-      fi
-      else
-      echo ""
-      fi
-      else
-      echo ""
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Script monitoring kuota TROJAN dimulai."
+
+# Loop tak terbatas untuk monitoring
+while true; do
+    debug_log "======================================================"
+    debug_log "Memulai siklus monitoring baru..."
+    sleep 30 # Menggunakan sleep 30 detik seperti di script asli
+
+    # Flag untuk menandai apakah perlu me-restart xray
+    restart_needed=false
+
+    # 1. Ambil daftar pengguna TROJAN yang AKTIF dari database
+    debug_log "Mengambil daftar pengguna TROJAN aktif dari database..."
+    mapfile -t trojan_users < <(sqlite3 "$DB_PATH" "SELECT username FROM accounts WHERE protocol = 'trojan' AND is_active = 1;")
+
+    if [[ ${#trojan_users[@]} -eq 0 ]]; then
+        debug_log "Tidak ada pengguna TROJAN aktif yang ditemukan. Menunggu 30 detik lagi..."
+        continue # Lanjut ke iterasi berikutnya jika tidak ada user
     fi
-  done
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Memantau ${#trojan_users[@]} pengguna TROJAN aktif."
+    debug_log "Daftar pengguna: ${trojan_users[*]}"
+
+    # 2. Loop untuk setiap pengguna: update penggunaan dan periksa kuota
+    for user in "${trojan_users[@]}"; do
+        debug_log "--- Memproses user TROJAN: $user ---"
+        
+        # Ambil data pengguna (kuota dan penggunaan saat ini) dari DB
+        user_data=$(sqlite3 "$DB_PATH" "SELECT quota, quota_usage FROM accounts WHERE username = '$user';")
+        quota=$(echo "$user_data" | cut -d '|' -f 1)
+        current_usage_db=$(echo "$user_data" | cut -d '|' -f 2)
+        debug_log "Data dari DB -> Quota: $quota bytes, Usage: $current_usage_db bytes"
+
+        # Panggil API Xray untuk mendapatkan traffic downlink sejak pengecekan terakhir
+        debug_log "Memanggil API Xray untuk user TROJAN $user..."
+        api_output=$(xray api stats --server="$XRAY_API_ADDRESS" -name "user>>>${user}>>>traffic>>>downlink")
+        debug_log "Output mentah API Xray: $api_output"
+        
+        downlink_api=$(echo "$api_output" | grep -w "value" | awk '{print $2}' | cut -d '"' -f2)
+        debug_log "Downlink dari API (setelah parsing): $downlink_api bytes"
+
+        # Periksa apakah API berhasil dan mengembalikan angka
+        if [[ $downlink_api =~ ^[0-9]+$ ]]; then
+            # Logika akumulasi
+            new_total_usage=$((current_usage_db + downlink_api))
+            debug_log "Logika akumulasi: $current_usage_db + $downlink_api = $new_total_usage"
+            
+            # Update kolom quota_usage di database dengan nilai baru
+            debug_log "Mengupdate quota_usage di database menjadi $new_total_usage..."
+            sqlite3 "$DB_PATH" "UPDATE accounts SET quota_usage = $new_total_usage WHERE username = '$user';"
+            
+            # Reset counter traffic di Xray untuk pengguna ini
+            debug_log "Mereset counter traffic di Xray untuk user TROJAN $user..."
+            xray api stats --server="$XRAY_API_ADDRESS" -name "user>>>${user}>>>traffic>>>downlink" -reset > /dev/null 2>&1
+            
+            # Gunakan nilai terbaru untuk pengecekan kuota
+            usage_to_check=$new_total_usage
+        else
+            # Jika API gagal, gunakan data dari database saja
+            usage_to_check=$current_usage_db
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Gagal mendapatkan data API untuk user TROJAN $user. Menggunakan data dari database."
+        fi
+
+        # 3. Periksa kuota dan nonaktifkan jika habis
+        # Hanya periksa jika quota > 0 (untuk akun unlimited)
+        debug_log "Memeriksa kuota: Usage ($usage_to_check) vs Quota ($quota)"
+        if [[ $usage_to_check -ge $quota && $quota -gt 0 ]]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] QUOTA HABIS untuk user TROJAN: $user. Menonaktifkan..."
+            
+            # a. Ubah status user menjadi tidak aktif di database
+            debug_log "Mengubah status user TROJAN $user menjadi tidak aktif di database."
+            sqlite3 "$DB_PATH" "UPDATE accounts SET is_active = 0 WHERE username = '$user';"
+
+            # b. Hapus konfigurasi user dari xray config.json menggunakan sed
+            debug_log "Menghapus konfigurasi user TROJAN $user dari /etc/xray/config.json dengan sed."
+            # PERINGATAN: Metode ini rentan terhadap perubahan format JSON.
+            # Pastikan format JSON Anda konsisten.
+            sed -i '/"email": "'"$user"'"/,/^}/d' /etc/xray/config.json
+
+            # Periksa apakah penghapusan berhasil dengan memeriksa apakah email user masih ada
+            if grep -q "\"email\": \"$user\"" /etc/xray/config.json; then
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Gagal menghapus user TROJAN $user dengan sed. User mungkin masih ada di config."
+            else
+                debug_log "Berhasil menghapus user TROJAN $user dengan sed."
+            fi
+
+            # c. Hapus file-file terkait user (sesuaikan path jika perlu)
+            debug_log "Menghapus file-file terkait user TROJAN $user."
+            rm -f /etc/trojan/$user
+            rm -f /var/www/html/trojan-$user.txt
+            
+            # d. Kirim notifikasi ke Telegram
+            usage_formatted=$(con "$usage_to_check")
+            quota_formatted=$(con "$quota")
+            send-log "$user" "$usage_formatted" "$quota_formatted"
+            
+            # e. Tandai bahwa perlu restart xray
+            restart_needed=true
+        else
+            debug_log "Kuota user TROJAN $user masih aman."
+        fi
+    done
+
+    # 4. Restart Xray jika ada perubahan (akun dinonaktifkan)
+    if [ "$restart_needed" = true ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Ada perubahan, me-restart layanan Xray..."
+        systemctl restart xray
+    else
+        debug_log "Tidak ada perubahan, tidak perlu me-restart Xray."
+    fi
+
 done

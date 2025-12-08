@@ -1,43 +1,40 @@
 import os
-import json
-import re
+import sqlite3
+from datetime import datetime
 from utils.logger import logger
 
 class QuotaService:
     # Constants
-    BYTES_TO_GB = 1073741824
+    BYTES_TO_GB = 1073741824  # 1024 * 1024 * 1024
     SUPPORTED_PROTOCOLS = ["vmess", "vless", "trojan"]
+    DB_PATH = "/etc/vpn/database.db"
     
     def __init__(self):
-        self.base_limit_dir = "/etc/limit"
-        self.xray_config_path = "/etc/xray/config.json"
-        
-        # Pattern yang benar berdasarkan analisis
-        # Format: comment di line terpisah
-        self.comment_patterns = {
-            "vless": r'#vless\s*\n\s*#&\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})',
-            "vmess": r'#vmess\s*\n\s*###\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})',
-            "trojan": r'#trojanws\s*\n\s*#!\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})'
-        }
-        
-        # Pattern untuk grpc variant
-        self.grpc_patterns = {
-            "vless": r'#vlessgrpc\s*\n\s*#&\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})',
-            "vmess": r'#vmessgrpc\s*\n\s*###\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})',
-            "trojan": r'#trojangrpc\s*\n\s*#!\s+([^\s]+)\s+(\d{4}-\d{2}-\d{2})'
-        }
-        
-        # Pattern untuk mencari expiry date
-        self.expiry_patterns = {
-            "vless": r'#&\s+{}\s+(\d{{4}}-\d{{2}}-\d{{2}})',
-            "vmess": r'###\s+{}\s+(\d{{4}}-\d{{2}}-\d{{2}})',
-            "trojan": r'#!\s+{}\s+(\d{{4}}-\d{{2}}-\d{{2}})'
-        }
+        # Inisialisasi koneksi database
+        try:
+            self.conn = sqlite3.connect(self.DB_PATH)
+            # Memungkinkan akses kolom seperti dictionary (e.g., row['username'])
+            self.conn.row_factory = sqlite3.Row 
+            logger.info(f"Berhasil terhubung ke database: {self.DB_PATH}")
+        except sqlite3.Error as e:
+            logger.error(f"Error saat menghubungkan ke database: {e}")
+            # Hentikan layanan jika koneksi database gagal
+            raise
+
+    def _convert_timestamp_to_date(self, timestamp):
+        """Helper untuk mengkonversi Unix Epoch ke format YYYY-MM-DD."""
+        if timestamp:
+            try:
+                return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Gagal mengkonversi timestamp {timestamp}: {e}")
+                return None
+        return None
 
     def get_user_quota(self, protocol, username):
         """
-        Mendapatkan informasi kuota untuk user tertentu berdasarkan protocol
-        Tanpa validasi ke xray/config.json, langsung membaca file quota
+        Mendapatkan informasi kuota untuk user tertentu dari database.
+        Response API sudah dikonversi ke format yang mudah dibaca.
         """
         try:
             # Validasi input
@@ -49,83 +46,92 @@ class QuotaService:
             
             logger.info(f"Mencari kuota untuk user: {username} di protokol: {protocol}")
             
-            # Path file quota limit dan quota used
-            quota_limit_path = f"/etc/{protocol}/{username}"
-            quota_used_path = f"{self.base_limit_dir}/{protocol}/{username}"
+            cursor = self.conn.cursor()
+            # Query untuk mendapatkan semua data yang diperlukan
+            query = """
+                SELECT quota, quota_usage, expired_at, created_at, password_or_uuid
+                FROM accounts 
+                WHERE username = ? AND protocol = ? AND is_active = 1
+            """
+            cursor.execute(query, (username, protocol))
+            row = cursor.fetchone()
             
-            # Inisialisasi nilai default
-            quota_limit = 0
-            quota_used = 0
-            is_unlimited = True  # default unlimited
+            if not row:
+                logger.warning(f"User {username} dengan protokol {protocol} tidak ditemukan atau tidak aktif di database.")
+                return {"error": "User tidak ditemukan"}
             
-            # Cek file quota limit
-            if os.path.exists(quota_limit_path):
-                try:
-                    with open(quota_limit_path, 'r') as f:
-                        content = f.read().strip()
-                        if content:
-                            quota_limit = int(content)
-                            is_unlimited = False
-                except (ValueError, FileNotFoundError) as e:
-                    logger.warning(f"Error membaca file quota limit {quota_limit_path}: {e}")
-                    # Jika error, tetap dianggap unlimited
+            # --- Proses Konversi Data ---
             
-            # Cek file quota used
-            if os.path.exists(quota_used_path):
-                try:
-                    with open(quota_used_path, 'r') as f:
-                        content = f.read().strip()
-                        if content:
-                            quota_used = int(content)
-                except (ValueError, FileNotFoundError) as e:
-                    logger.warning(f"Error membaca file quota used {quota_used_path}: {e}")
-                    # Jika error, quota used dianggap 0
+            # 1. Konversi Kuota dari Bytes ke GB
+            quota_limit_bytes = row['quota']
+            quota_used_bytes = row['quota_usage']
             
-            # Konversi ke GB
-            quota_limit_gb = "Unlimited" if is_unlimited else round(quota_limit / self.BYTES_TO_GB, 2)
-            quota_used_gb = round(quota_used / self.BYTES_TO_GB, 2)
+            # Asumsi: quota <= 0 berarti unlimited
+            is_unlimited = quota_limit_bytes <= 0
             
-            # Hitung sisa kuota
+            quota_limit_gb = "Unlimited" if is_unlimited else round(quota_limit_bytes / self.BYTES_TO_GB, 2)
+            quota_used_gb = round(quota_used_bytes / self.BYTES_TO_GB, 2)
+            
             if is_unlimited:
                 quota_remaining_gb = "Unlimited"
             else:
-                quota_remaining = quota_limit - quota_used
-                quota_remaining_gb = round(quota_remaining / self.BYTES_TO_GB, 2)
+                quota_remaining_bytes = quota_limit_bytes - quota_used_bytes
+                quota_remaining_gb = round(max(0, quota_remaining_bytes) / self.BYTES_TO_GB, 2)
+
+            # 2. Konversi Timestamp dari Unix Epoch ke format YYYY-MM-DD
+            expiry_date = self._convert_timestamp_to_date(row['expired_at'])
+            created_at_date = self._convert_timestamp_to_date(row['created_at'])
             
-            # Jika kedua file tidak ada, maka user tidak ada
-            if not os.path.exists(quota_limit_path) and not os.path.exists(quota_used_path):
-                logger.warning(f"User {username} tidak ditemukan di protokol {protocol}")
-                return {"error": "User tidak ditemukan"}
-            
+            # --- Membangun Response API ---
             result = {
                 "username": username,
                 "protocol": protocol,
-                "quota_limit": quota_limit_gb,
-                "quota_used": quota_used_gb,
-                "quota_remaining": quota_remaining_gb,
-                "is_unlimited": is_unlimited
+                "quota_limit_gb": quota_limit_gb,
+                "quota_used_gb": quota_used_gb,
+                "quota_remaining_gb": quota_remaining_gb,
+                "is_unlimited": is_unlimited,
+                "created_at": created_at_date,
+                "expiry_date": expiry_date
             }
+            
+            # Tambahkan UUID atau password
+            if protocol == "trojan":
+                result["password"] = row['password_or_uuid']
+            else: # vless, vmess
+                result["uuid"] = row['password_or_uuid']
             
             return result
             
+        except sqlite3.Error as e:
+            logger.error(f"Error database saat mendapatkan kuota user {username}: {str(e)}")
+            return {"error": f"Error database: {str(e)}"}
         except Exception as e:
-            logger.error(f"Error mendapatkan kuota user {username} di protokol {protocol}: {str(e)}")
+            logger.error(f"Error umum saat mendapatkan kuota user {username}: {str(e)}")
             return {"error": f"Error mendapatkan kuota user: {str(e)}"}
 
     def get_all_users_quota(self):
         """
-        Mendapatkan informasi kuota untuk semua user dari config.json
+        Mendapatkan informasi kuota untuk semua user dari database.
+        Response API sudah dikonversi ke format yang mudah dibaca.
         """
         try:
-            logger.info("Memulai get_all_users_quota")
+            logger.info("Memulai get_all_users_quota dari database")
             
             all_users = []
-            users_data = self._get_all_users_from_config()
+            cursor = self.conn.cursor()
             
-            logger.info(f"Data user ditemukan: {len(users_data)}")
+            # Query untuk mendapatkan semua data user aktif
+            query = """
+                SELECT username, protocol, quota, quota_usage, expired_at, created_at, password_or_uuid
+                FROM accounts 
+                WHERE is_active = 1
+            """
+            cursor.execute(query)
+            users_data = cursor.fetchall()
             
-            if len(users_data) == 0:
-                logger.warning("Tidak ada user ditemukan dalam config")
+            logger.info(f"Ditemukan {len(users_data)} user aktif di database.")
+            
+            if not users_data:
                 return {
                     "users": [],
                     "statistics": {
@@ -136,71 +142,68 @@ class QuotaService:
                     }
                 }
                 
-            for user_data in users_data:
-                username = user_data['email']
-                protocol = user_data['protocol']
+            for user_row in users_data:
+                username = user_row['username']
+                protocol = user_row['protocol']
                 
-                # Ambil batas kuota
-                quota_limit = 0
-                is_unlimited = True
-                protocol_dir = f"/etc/{protocol}"
+                # --- Proses Konversi Data ---
+
+                # 1. Konversi Kuota dari Bytes ke GB
+                quota_limit_bytes = user_row['quota']
+                quota_used_bytes = user_row['quota_usage']
                 
-                if os.path.exists(f"{protocol_dir}/{username}"):
-                    try:
-                        with open(f"{protocol_dir}/{username}", 'r') as f:
-                            content = f.read().strip()
-                            if content:
-                                quota_limit = int(content)
-                                is_unlimited = False
-                    except (ValueError, FileNotFoundError):
-                        pass
+                is_unlimited = quota_limit_bytes <= 0
                 
-                # Ambil penggunaan kuota
-                quota_used = 0
-                quota_file = f"{self.base_limit_dir}/{protocol}/{username}"
-                if os.path.exists(quota_file):
-                    try:
-                        with open(quota_file, 'r') as f:
-                            content = f.read().strip()
-                            if content:
-                                quota_used = int(content)
-                    except (ValueError, FileNotFoundError):
-                        pass
+                quota_limit_gb = "Unlimited" if is_unlimited else round(quota_limit_bytes / self.BYTES_TO_GB, 2)
+                quota_used_gb = round(quota_used_bytes / self.BYTES_TO_GB, 2)
                 
-                # Konversi ke GB
-                quota_limit_gb = "Unlimited" if is_unlimited else round(quota_limit / self.BYTES_TO_GB, 2)
-                quota_used_gb = round(quota_used / self.BYTES_TO_GB, 2)
+                if is_unlimited:
+                    quota_remaining_gb = "Unlimited"
+                else:
+                    quota_remaining_bytes = quota_limit_bytes - quota_used_bytes
+                    quota_remaining_gb = round(max(0, quota_remaining_bytes) / self.BYTES_TO_GB, 2)
+
+                # 2. Konversi Timestamp dari Unix Epoch ke format YYYY-MM-DD
+                expiry_date = self._convert_timestamp_to_date(user_row['expired_at'])
+                created_at_date = self._convert_timestamp_to_date(user_row['created_at'])
                 
-                # Ambil tanggal kedaluwarsa
-                expiry_date = self._get_user_expiry(username, protocol)
-                
-                # Tentukan status
+                # --- Menentukan Status User ---
                 status = "active"
-                if not is_unlimited and quota_used >= quota_limit:
+                is_expired = False
+                if user_row['expired_at']:
+                    try:
+                        expiry_datetime = datetime.fromtimestamp(user_row['expired_at'])
+                        if datetime.now() > expiry_datetime:
+                            status = "expired"
+                            is_expired = True
+                    except (ValueError, TypeError):
+                        pass # Abaikan jika timestamp tidak valid
+
+                if not is_expired and not is_unlimited and quota_used_bytes >= quota_limit_bytes:
                     status = "quota_exceeded"
-                elif expiry_date and self._is_expired(expiry_date):
-                    status = "expired"
                 
+                # --- Membangun Response API ---
                 user_info = {
                     "username": username,
                     "protocol": protocol,
                     "quota_limit_gb": quota_limit_gb,
                     "quota_used_gb": quota_used_gb,
-                    "quota_remaining_gb": "Unlimited" if is_unlimited else max(0, round((quota_limit - quota_used) / self.BYTES_TO_GB, 2)),
+                    "quota_remaining_gb": quota_remaining_gb,
                     "is_unlimited": is_unlimited,
                     "status": status,
+                    "created_at": created_at_date,
                     "expiry_date": expiry_date
                 }
                 
-                # Tambahkan uuid atau password
+                # Tambahkan UUID atau password
                 if protocol == "trojan":
-                    user_info["password"] = user_data.get("password")
-                else:
-                    user_info["uuid"] = user_data.get("id")
+                    user_info["password"] = user_row['password_or_uuid']
+                else: # vless, vmess
+                    user_info["uuid"] = user_row['password_or_uuid']
                 
                 all_users.append(user_info)
                 
-            # Statistik tambahan
+            # --- Menghitung Statistik ---
             total_users = len(all_users)
             active_users = len([u for u in all_users if u['status'] == 'active'])
             expired_users = len([u for u in all_users if u['status'] == 'expired'])
@@ -216,145 +219,17 @@ class QuotaService:
                 }
             }
                 
+        except sqlite3.Error as e:
+            logger.error(f"Error database saat mendapatkan semua kuota user: {str(e)}")
+            return {"error": f"Error database: {str(e)}"}
         except Exception as e:
-            logger.error(f"Error mendapatkan semua kuota user: {str(e)}")
+            logger.error(f"Error umum saat mendapatkan semua kuota user: {str(e)}")
             return {"error": f"Error mendapatkan semua kuota user: {str(e)}"}
 
-    def _get_all_users_from_config(self):
+    def close_connection(self):
         """
-        Mendapatkan semua user dari config.json berdasarkan comment pattern
+        Menutup koneksi database. Sebaiknya dipanggil saat service dimatikan.
         """
-        try:
-            if not os.path.exists(self.xray_config_path):
-                logger.error(f"File config tidak ditemukan: {self.xray_config_path}")
-                return []
-                
-            with open(self.xray_config_path, 'r') as f:
-                content = f.read()
-                
-            users = []
-            
-            # Cari user berdasarkan comment pattern (regular)
-            for protocol, pattern in self.comment_patterns.items():
-                matches = re.findall(pattern, content)
-                logger.info(f"Protocol {protocol}: ditemukan {len(matches)} user")
-                
-                for username, expiry in matches:
-                    user_data = self._find_user_in_json_by_email(username, protocol)
-                    if user_data:
-                        user_data['protocol'] = protocol
-                        user_data['email'] = username
-                        user_data['expiry_from_comment'] = expiry
-                        users.append(user_data)
-                        logger.info(f"User ditemukan: {username} ({protocol})")
-            
-            # Cari user berdasarkan grpc pattern
-            for protocol, pattern in self.grpc_patterns.items():
-                matches = re.findall(pattern, content)
-                logger.info(f"Protocol {protocol}grpc: ditemukan {len(matches)} user")
-                
-                for username, expiry in matches:
-                    # Cek apakah user sudah ada (avoid duplicate)
-                    existing = any(u['email'] == username and u['protocol'] == protocol for u in users)
-                    if not existing:
-                        user_data = self._find_user_in_json_by_email(username, protocol)
-                        if user_data:
-                            user_data['protocol'] = protocol
-                            user_data['email'] = username
-                            user_data['expiry_from_comment'] = expiry
-                            user_data['variant'] = 'grpc'
-                            users.append(user_data)
-                            logger.info(f"User ditemukan (grpc): {username} ({protocol})")
-                
-            return users
-                
-        except Exception as e:
-            logger.error(f"Error membaca config: {str(e)}")
-            return []
-
-    def _find_user_in_config(self, username):
-        """
-        Mencari user tertentu di config.json
-        """
-        all_users = self._get_all_users_from_config()
-        for user in all_users:
-            if user['email'] == username:
-                return user
-        return None
-
-    def _find_user_in_json_by_email(self, email, protocol):
-        """
-        Mencari user di struktur JSON berdasarkan email dan protocol
-        """
-        try:
-            with open(self.xray_config_path, 'r') as f:
-                # Remove comment lines untuk parsing JSON
-                lines = f.readlines()
-                json_lines = []
-                for line in lines:
-                    stripped = line.strip()
-                    if not stripped.startswith('#'):
-                        json_lines.append(line)
-                
-                json_content = ''.join(json_lines)
-                config = json.loads(json_content)
-                
-            for inbound in config.get("inbounds", []):
-                inbound_protocol = inbound.get("protocol")
-                
-                # Match protocol
-                if (inbound_protocol == protocol or
-                     (protocol == "trojan" and inbound_protocol in ["trojan", "trojanws"]) or
-                    (protocol == "vless" and inbound_protocol == "vless") or
-                    (protocol == "vmess" and inbound_protocol == "vmess")):
-                    
-                    settings = inbound.get("settings", {})
-                    clients = settings.get("clients", [])
-                    
-                    for client in clients:
-                        if client.get("email") == email:
-                            return client
-                            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error finding user {email} in JSON: {str(e)}")
-            return None
-
-    def _get_user_expiry(self, username, protocol):
-        """
-        Mendapatkan tanggal kedaluwarsa dari comment
-        """
-        try:
-            if not os.path.exists(self.xray_config_path):
-                return None
-                
-            with open(self.xray_config_path, 'r') as f:
-                content = f.read()
-                
-            # Gunakan pattern yang sesuai dengan format
-            pattern = self.expiry_patterns.get(protocol, "").format(re.escape(username))
-            if pattern:
-                match = re.search(pattern, content)
-                if match:
-                    return match.group(1)
-                    
-            return None
-                
-        except Exception as e:
-            logger.error(f"Error mendapatkan tanggal kedaluwarsa untuk {username}: {str(e)}")
-            return None
-
-    def _is_expired(self, expiry_date):
-        """
-        Mengecek apakah tanggal sudah expired
-        """
-        try:
-            from datetime import datetime
-            expiry = datetime.strptime(expiry_date, "%Y-%m-%d")
-            now = datetime.now()
-            return now > expiry
-        except Exception as e:
-            logger.error(f"Error checking expiry date {expiry_date}: {str(e)}")
-            return False
-
+        if self.conn:
+            self.conn.close()
+            logger.info("Koneksi database ditutup.")
