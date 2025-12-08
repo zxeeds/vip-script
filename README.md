@@ -18,6 +18,11 @@
 <pre><code>wget https://raw.githubusercontent.com/zxeeds/vip-script/main/api-install.sh && chmod +x api-install.sh && ./api-install.sh
 </code></pre>
 
+### UPDATE API
+
+<pre><code>wget https://raw.githubusercontent.com/zxeeds/vip-script/main/update-api.sh && chmod +x update-api.sh && ./update-api.sh
+</code></pre>
+
 ### PERINTAH UPDATE
 
 <pre><code>wget https://raw.githubusercontent.com/zxeeds/vip-script/main/files/update && chmod +x update && ./update</code></pre>
