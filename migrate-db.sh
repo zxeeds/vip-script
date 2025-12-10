@@ -106,24 +106,24 @@ migrate_accounts() {
             log_warning "  -> IP limit lama untuk '$username' tidak valid ('$old_ip_limit'). Menggunakan default ($IP_LIMIT)."
         fi
 
-        # Gunakan query berparameter untuk mencegah SQL Injection
-        sqlite3 "$DEST_DB" "INSERT INTO accounts (username, protocol, password_or_uuid, expired_at, quota, quota_usage, ip_limit, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)" \
-            "$username" \
-            "$protocol" \
-            "$password_or_uuid" \
-            "$expired_epoch" \
-            "$quota_bytes_to_insert" \
-            "0" \
-            "$ip_limit_to_insert" \
-            "$created_at" \
-            "1"
+        # --- Sanitasi data untuk mencegah SQL Injection ---
+        # Ganti setiap kutip tunggal (') dengan dua kutip tunggal ('')
+        # Ini adalah cara standar untuk escape karakter kutip di SQL.
+        local safe_username="${username//\'/\'\'}"
+        local safe_password_or_uuid="${password_or_uuid//\'/\'\'}"
+
+        # --- Gunakan Here Document untuk perintah sqlite3 ---
+        sqlite3 "$DEST_DB" <<EOF
+INSERT INTO accounts (username, protocol, password_or_uuid, expired_at, quota, quota_usage, ip_limit, created_at, is_active)
+VALUES ('$safe_username', '$protocol', '$safe_password_or_uuid', $expired_epoch, $quota_bytes_to_insert, 0, $ip_limit_to_insert, $created_at, 1);
+EOF
 
         if [ $? -eq 0 ]; then
             ((migrated_count++))
             log_success "  -> Berhasil memigrasi: $username"
         else
             ((skipped_count++))
-            log_warning "  -> Dilewati (mungkin duplikat): $username"
+            log_warning "  -> Dilewati (mungkin duplikat atau error DB): $username"
         fi
     done < "$source_db"
 
@@ -185,7 +185,23 @@ migrate_accounts "$VLESS_DB" "vless"
 migrate_accounts "$TROJAN_DB" "trojan"
 migrate_accounts "$SSH_DB" "ssh"
 
-# 6. Selesai
+# 6. Atur izin file database untuk keamanan
+echo
+log_info "Mengatur izin file untuk database di $DEST_DB..."
+chown root:root "$DEST_DB"
+if [ $? -ne 0 ]; then
+    log_warning "Gagal mengubah kepemilikan file database. Silakan atur manual dengan: chown root:root $DEST_DB"
+fi
+
+chmod 600 "$DEST_DB"
+if [ $? -ne 0 ]; then
+    log_error "GAGAL: Tidak dapat mengatur izin file database ke 600. Ini adalah RISIKO KEAMANAN."
+    log_error "Silakan atur secara manual dengan menjalankan perintah: chmod 600 $DEST_DB"
+else
+    log_success "Izin file database telah diatur ke 600 (hanya root yang dapat membaca/menulis)."
+fi
+
+# 7. Selesai
 echo
 echo "=========================================================="
 log_success "Proses migrasi semua akun telah selesai!"
