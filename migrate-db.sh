@@ -70,16 +70,15 @@ migrate_accounts() {
     local migrated_count=0
     local skipped_count=0
 
-    # Baca file baris per baris, abaikan baris kosong atau yang dimulai dengan '#'
+    # Baca file baris per baris, abaikan baris kosong atau komentar
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Lewati baris kosong atau komentar
-        if [[ -z "$line" || "$line" =~ ^# ]]; then
+        # --- PERUBAHAN: Lewati baris kosong atau yang dimulai dengan '# ' (hash + spasi)
+        if [[ -z "$line" || "$line" =~ ^#\s ]]; then
             continue
         fi
 
         # Baca data dari baris. Format: [username] [pass/uuid] [quota_lama] [limit_lama] [expired_lama]
-        # Kita hanya membutuhkan 3 data pertama
-        read -r username password_or_uuid _ _ old_expired <<< "$line"
+        read -r username password_or_uuid old_quota_gb _ old_expired <<< "$line"
 
         # Konversi tanggal lama ke Unix epoch
         local expired_epoch=0
@@ -89,14 +88,24 @@ migrate_accounts() {
         
         local created_at=$(date +%s)
 
+        # Konversi kuota lama ke bytes
+        local quota_bytes_to_insert=$QUOTA_BYTES # Default ke nilai default
+        if [[ "$old_quota_gb" =~ ^[0-9]+$ ]]; then
+            # Jika kuota lama adalah angka, konversi ke bytes
+            quota_bytes_to_insert=$(($old_quota_gb * 1024 * 1024 * 1024))
+            log_info "  -> Menggunakan kuota lama untuk $username: $old_quota_gb GB"
+        else
+            # Jika bukan angka, gunakan default dan log peringatan
+            log_warning "  -> Kuota lama untuk '$username' tidak valid ('$old_quota_gb'). Menggunakan default ($QUOTA_GB GB)."
+        fi
+
         # Gunakan query berparameter untuk mencegah SQL Injection
-        # Jika username sudah ada, query akan gagal (karena UNIQUE constraint)
         sqlite3 "$DEST_DB" "INSERT INTO accounts (username, protocol, password_or_uuid, expired_at, quota, quota_usage, ip_limit, created_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)" \
             "$username" \
             "$protocol" \
             "$password_or_uuid" \
             "$expired_epoch" \
-            "$QUOTA_BYTES" \
+            "$quota_bytes_to_insert" \
             "0" \
             "$IP_LIMIT" \
             "$created_at" \
