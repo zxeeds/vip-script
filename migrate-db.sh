@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Sumber database lama
 VMESS_DB="/etc/vmess/.vmess.db"
 VLESS_DB="/etc/vless/.vless.db"
-TROJAN_DB="/etc/trojan/trojan.db"
+TROJAN_DB="/etc/trojan/.trojan.db"
 SSH_DB="/etc/ssh/.ssh.db"
 
 # Tujuan database terpusat
