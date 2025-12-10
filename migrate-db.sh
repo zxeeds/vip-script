@@ -72,13 +72,13 @@ migrate_accounts() {
 
     # Baca file baris per baris, abaikan baris kosong atau komentar
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # --- PERUBAHAN: Lewati baris kosong atau yang dimulai dengan '# ' (hash + spasi)
+        # Lewati baris kosong atau yang dimulai dengan '# ' (hash + spasi)
         if [[ -z "$line" || "$line" =~ ^#\s ]]; then
             continue
         fi
 
-        # Baca data dari baris. Format: [username] [pass/uuid] [quota_lama] [limit_lama] [expired_lama]
-        read -r username password_or_uuid old_quota_gb _ old_expired <<< "$line"
+        # Baca data dari baris. Format: ### [username] [pass/uuid] [quota] [ip_limit] [expired]
+        read -r _ username password_or_uuid old_quota_gb old_ip_limit old_expired <<< "$line"
 
         # Konversi tanggal lama ke Unix epoch
         local expired_epoch=0
@@ -88,15 +88,22 @@ migrate_accounts() {
         
         local created_at=$(date +%s)
 
-        # Konversi kuota lama ke bytes
+        # --- Konversi kuota lama ke bytes ---
         local quota_bytes_to_insert=$QUOTA_BYTES # Default ke nilai default
         if [[ "$old_quota_gb" =~ ^[0-9]+$ ]]; then
-            # Jika kuota lama adalah angka, konversi ke bytes
             quota_bytes_to_insert=$(($old_quota_gb * 1024 * 1024 * 1024))
             log_info "  -> Menggunakan kuota lama untuk $username: $old_quota_gb GB"
         else
-            # Jika bukan angka, gunakan default dan log peringatan
             log_warning "  -> Kuota lama untuk '$username' tidak valid ('$old_quota_gb'). Menggunakan default ($QUOTA_GB GB)."
+        fi
+
+        # --- Gunakan IP limit lama ---
+        local ip_limit_to_insert=$IP_LIMIT # Default ke nilai default
+        if [[ "$old_ip_limit" =~ ^[0-9]+$ ]]; then
+            ip_limit_to_insert=$old_ip_limit
+            log_info "  -> Menggunakan IP limit lama untuk $username: $old_ip_limit"
+        else
+            log_warning "  -> IP limit lama untuk '$username' tidak valid ('$old_ip_limit'). Menggunakan default ($IP_LIMIT)."
         fi
 
         # Gunakan query berparameter untuk mencegah SQL Injection
@@ -107,7 +114,7 @@ migrate_accounts() {
             "$expired_epoch" \
             "$quota_bytes_to_insert" \
             "0" \
-            "$IP_LIMIT" \
+            "$ip_limit_to_insert" \
             "$created_at" \
             "1"
 
