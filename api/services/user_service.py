@@ -80,9 +80,9 @@ class UserService:
                 self.PROTOCOL_SCRIPTS['ssh'][action],
                 username,
                 password,  # <-- Argumen password ditambahkan di sini
-                str(quota),
                 str(ip_limit),
-                str(masaaktif)
+                str(masaaktif),
+                str(quota)
             ]
         else:  # action == 'renew'
             # Skrip renew tidak memerlukan password
