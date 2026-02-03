@@ -98,24 +98,16 @@ download_modular_files() {
     wget -q -O "$APP_DIR/utils/validators.py" "$BASE_URL/utils/validators.py"
     wget -q -O "$APP_DIR/utils/subprocess_utils.py" "$BASE_URL/utils/subprocess_utils.py"
     
-    # Services (lama)
+    # Services
     wget -q -O "$APP_DIR/services/user_service.py" "$BASE_URL/services/user_service.py"
     wget -q -O "$APP_DIR/services/quota_service.py" "$BASE_URL/services/quota_service.py"
-    
-    # --- TAMBAHKAN FILE TRIAL SERVICES BARU ---
     log_install "Mengunduh file trial services..."
     wget -q -O "$APP_DIR/services/trial_factory.py" "$BASE_URL/services/trial_factory.py"
-    wget -q -O "$APP_DIR/services/trial_vme.py" "$BASE_URL/services/trial_vme.py"
-    wget -q -O "$APP_DIR/services/trial_vle.py" "$BASE_URL/services/trial_vle.py"
-    wget -q -O "$APP_DIR/services/trial_tro.py" "$BASE_URL/services/trial_tro.py"
-    wget -q -O "$APP_DIR/services/trial_ssh.py" "$BASE_URL/services/trial_ssh.py"
     
     # Routes (lama)
     wget -q -O "$APP_DIR/routes/user_routes.py" "$BASE_URL/routes/user_routes.py"
     wget -q -O "$APP_DIR/routes/health_routes.py" "$BASE_URL/routes/health_routes.py"
     wget -q -O "$APP_DIR/routes/quota_routes.py" "$BASE_URL/routes/quota_routes.py"
-    
-    # --- TAMBAHKAN FILE TRIAL ROUTES BARU ---
     log_install "Mengunduh file trial routes..."
     wget -q -O "$APP_DIR/routes/trial_routes.py" "$BASE_URL/routes/trial_routes.py"
      

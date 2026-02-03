@@ -1,5 +1,7 @@
+import os
 import re
-from typing import Union
+import sqlite3
+from typing import Optional, Tuple, Union
 from config.config_manager import ConfigManager
 
 config = ConfigManager()
@@ -16,7 +18,7 @@ def validate_username(username: str, protocol: str = None) -> bool:
     """Validate username based on protocol"""
     if not username or len(username) < 3 or len(username) > 20:
         return False
-    return bool(re.match(r'^[a-zA-Z0-9_]+$', username))
+    return bool(re.match(r'^[a-zA-Z0-9]+$', username))
 
 def validate_password(password: str) -> bool:
     """Validate password strength"""
@@ -25,3 +27,33 @@ def validate_password(password: str) -> bool:
 def validate_protocol(protocol: str) -> bool:
     """Check if protocol is supported"""
     return protocol.lower() in config.supported_protocols
+
+def check_username_unique(
+    username: str,
+    db_path: str = '/etc/vpn/database.db'
+) -> Tuple[bool, Optional[str], int]:
+    """Check whether a username is unique in the accounts table."""
+    if not username:
+        return False, 'Username is required', 400
+
+    if not os.path.exists(db_path):
+        return False, f'Database file not found at {db_path}', 500
+
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT 1 FROM accounts WHERE username = ? LIMIT 1',
+                (username,)
+            )
+            exists = cursor.fetchone() is not None
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        return False, f'Database error: {str(e)}', 500
+
+    if exists:
+        return False, 'Username already exists', 400
+
+    return True, None, 200

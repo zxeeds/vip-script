@@ -7,5 +7,6 @@
   "protocols_allowed": ["vmess", "vless", "trojan", "ssh"],
   "port": 8082,
   "default_user_validity_days": 30,
+  "user_action_timeout_seconds": 30,
   "log_dir": "/var/log/vpn-api"
 }

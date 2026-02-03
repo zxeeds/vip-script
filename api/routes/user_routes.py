@@ -5,7 +5,8 @@ from utils.validators import (
     validate_ip,
     validate_api_key,
     validate_username,
-    validate_protocol
+    validate_protocol,
+    check_username_unique
 )
 from utils.logger import logger
 
@@ -37,10 +38,19 @@ def init_user_routes(app):
             logger.debug(f"Request data: {data}")
 
             # Validate input
-            if not validate_username(data.get('username')):
+            if not isinstance(data, dict):
                 return jsonify({
                     'status': 'error',
-                    'message': 'Invalid username format'
+                    'message': 'Invalid JSON body'
+                }), 400
+
+            username = data.get('username')
+            action = data.get('action', 'add').lower()
+
+            if not validate_username(username):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Username must be 3-20 characters, letters/numbers only, no spaces or symbols'
                 }), 400
 
             if not validate_protocol(data.get('protocol')):
@@ -48,6 +58,14 @@ def init_user_routes(app):
                     'status': 'error',
                     'message': 'Unsupported protocol'
                 }), 400
+
+            if action == 'add':
+                is_unique, unique_error, unique_code = check_username_unique(username)
+                if not is_unique:
+                    return jsonify({
+                        'status': 'error',
+                        'message': unique_error
+                    }), unique_code
 
             result = user_service.manage_user(data)
             if result['success']:
@@ -88,9 +106,9 @@ def init_user_routes(app):
 
         try:
             data = request.get_json(force=True)
-            
+
             # Validasi wajib
-            if not all(key in data for key in ['protocol', 'username']):
+            if not isinstance(data, dict) or not all(key in data for key in ['protocol', 'username']):
                 return jsonify({
                     'status': 'error',
                     'message': 'Protocol and username are required'
@@ -98,6 +116,12 @@ def init_user_routes(app):
 
             protocol = data['protocol'].lower()
             username = data['username']
+
+            if not validate_username(username):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Username must be 3-20 characters, letters/numbers only, no spaces or symbols'
+                }), 400
 
             if not validate_protocol(protocol):
                 return jsonify({

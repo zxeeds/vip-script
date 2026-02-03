@@ -100,6 +100,7 @@ class UserService:
         action = data.get('action', 'add').lower()
         protocol = data.get('protocol', 'vmess').lower()
         username = data.get('username')
+        timeout_seconds = config.get('user_action_timeout_seconds', 30)
         
         try:
             # Validasi tambahan
@@ -130,7 +131,7 @@ class UserService:
                 args = self._build_xray_args(protocol, action, data)
 
             # Jalankan proses
-            result = run_subprocess(args)
+            result = run_subprocess(args, timeout=timeout_seconds)
             
             # Standarisasi response
             if not isinstance(result, dict):
